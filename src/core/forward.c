@@ -227,7 +227,7 @@ struct socket_info *get_send_socket2(struct socket_info *force_send_socket,
 			if(unlikely(force_send_socket == 0)) {
 				if(likely(mismatch))
 					*mismatch = SS_MISMATCH_ADDR;
-				LM_WARN("protocol/port mismatch (forced %s:%s:%d, to %s:%s)\n",
+				LM_DBG("protocol/port mismatch (forced %s:%s:%d, to %s:%s)\n",
 						proto2a(orig->proto), ip_addr2a(&orig->address),
 						orig->port_no, proto2a(proto), su2a(to, sizeof(*to)));
 				goto not_forced;
