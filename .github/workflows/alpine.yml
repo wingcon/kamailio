@@ -1,8 +1,7 @@
 ---
 name: alpine docker image
 on:
-  schedule:
-  - cron: '41 3 * * *'
+  schedule: []
   push:
     tags:
     - '[0-9]+.[0-9]+.[0-9]+'
