@@ -43,7 +43,9 @@ typedef enum alg
 	ALG_UNSPEC = 0,	 /* Algorithm parameter not specified */
 	ALG_MD5 = 1,	 /* MD5 - default value*/
 	ALG_MD5SESS = 2, /* MD5-Session */
-	ALG_OTHER = 4	 /* Unknown */
+	ALG_OTHER = 4,	 /* Unknown */
+	ALG_SHA256 = 5,	 /* SHA-256 - default value*/
+	ALG_SHA256SESS = 6 /* SHA-256-Session */
 } alg_t;
 
 

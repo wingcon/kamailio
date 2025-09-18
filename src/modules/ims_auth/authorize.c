@@ -77,9 +77,9 @@
 
 typedef struct ims_auth_data
 {
-	uint8_t k[16];
-	uint8_t op[16];
-	uint8_t op_c[16];
+	uint8_t k[SHA256HASHLEN];
+	uint8_t op[SHA256HASHLEN];
+	uint8_t op_c[SHA256HASHLEN];
 	uint8_t amf[2];
 	uint16_t flags;
 } ims_auth_data_t;
@@ -123,19 +123,19 @@ str S_Authorization_AKA = {
 		"%.*s-Authenticate: Digest realm=\"%.*s\","
 		" nonce=\"%.*s\", algorithm=%.*s, ck=\"%.*s\", ik=\"%.*s\"%.*s\r\n",
 		107};
-str S_Authorization_MD5 = {"%.*s-Authenticate: Digest realm=\"%.*s\","
+str S_Authorization = {"%.*s-Authenticate: Digest realm=\"%.*s\","
 						   " nonce=\"%.*s\", algorithm=%.*s%.*s\r\n",
 		102};
 
 str algorithm_types[] = {{"unknown", 7}, {"AKAv1-MD5", 9}, {"AKAv2-MD5", 9},
 		{"Early-IMS", 9}, {"MD5", 3}, {"CableLabs-Digest", 16},
 		{"3GPP-Digest", 11}, {"TISPAN-HTTP_DIGEST_MD5", 22},
-		{"NASS-Bundled", 12}, {0, 0}};
+		{"NASS-Bundled", 12}, {"SHA-256", 7}, {"SHA-512-256", 11}, {0, 0}};
 
 str auth_scheme_types[] = {{"unknown", 7}, {"Digest-AKAv1-MD5", 16},
 		{"Digest-AKAv2-MD5", 16}, {"Early-IMS-Security", 18},
 		{"Digest-MD5", 10}, {"Digest", 6}, {"SIP Digest", 10},
-		{"HTTP_DIGEST_MD5", 15}, {"NASS-Bundled", 12}, {0, 0}};
+		{"HTTP_DIGEST_MD5", 15}, {"NASS-Bundled", 12}, {"Digest-SHA-256", 14}, {"Digest-SHA-512-256", 18}, {0, 0}};
 
 /**
  *
@@ -145,6 +145,12 @@ static ims_auth_data_t _ims_auth_data = {0};
 void ims_auth_data_reset(void)
 {
 	memset(&_ims_auth_data, 0, sizeof(ims_auth_data_t));
+}
+
+static inline int get_expected_len(unsigned char alg) {
+    if (alg == AUTH_SHA256 || alg == AUTH_SHA512_256)
+		return SHA256HASHHEXLEN;
+	return MD5HASHHEXLEN;
 }
 
 static inline int ims_auth_hexbin(
@@ -907,7 +913,7 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 	unsigned int aud_hash = 0;
 	str realm;
 	str private_identity, public_identity, username;
-	str nonce, response16, nc, cnonce, qop_str = {0, 0}, auts = {0, 0}, body,
+	str nonce, response_hex, nc, cnonce, qop_str = {0, 0}, auts = {0, 0}, body,
 									   *next_nonce = &empty_s;
 	enum qop_type qop = QOP_UNSPEC;
 	str uri = {0, 0};
@@ -966,18 +972,13 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 		return AUTH_NO_CREDENTIALS;
 	}
 
-	if(!get_nonce_response(msg, &username, realm, &nonce, &response16, &qop,
+	if(!get_nonce_response(msg, &username, realm, &nonce, &response_hex, &qop,
 			   &qop_str, &nc, &cnonce, &uri, is_proxy_auth)
-			|| !nonce.len || !response16.len) {
-		LM_DBG("Nonce or response missing: nonce len [%i], response16 "
+			|| !nonce.len || !response_hex.len) {
+		LM_DBG("Nonce or response missing: nonce len [%i], response hex "
 			   "len[%i]\n",
-				nonce.len, response16.len);
+				nonce.len, response_hex.len);
 		return AUTH_ERROR;
-	}
-
-	if(qop == QOP_AUTHINT) {
-		body = ims_get_body(msg);
-		calc_H(&body, hbody);
 	}
 
 	/* first, look for an already used vector (if nonce reuse is enabled) */
@@ -1017,12 +1018,6 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 				AUTH_VECTOR_SENT, &nonce, &aud_hash, NULL);
 	}
 
-	LM_INFO("uri=%.*s nonce=%.*s response=%.*s qop=%.*s nc=%.*s cnonce=%.*s "
-			"hbody=%.*s\n",
-			uri.len, uri.s, nonce.len, nonce.s, response16.len, response16.s,
-			qop_str.len, qop_str.s, nc.len, nc.s, cnonce.len, cnonce.s, 32,
-			hbody);
-
 	if(!av) {
 		LM_DBG("no matching auth vector found - maybe timer expired\n");
 
@@ -1034,6 +1029,36 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 
 		goto end;
 	}
+
+	if(qop == QOP_AUTHINT) {
+		body = ims_get_body(msg);
+		switch(av->type) {
+			case AUTH_SIP_DIGEST:
+			case AUTH_DIGEST:
+			case AUTH_AKAV1_MD5:
+			case AUTH_AKAV2_MD5:
+			case AUTH_MD5:
+				calc_H(HA_MD5, &body, hbody);
+				break;
+			case AUTH_SHA256:
+				calc_H(HA_SHA256, &body, hbody);
+				break;
+			case AUTH_SHA512_256:
+				calc_H(HA_SHA512_256, &body, hbody);
+				break;
+			default:
+				calc_H(HA_MD5, &body, hbody);
+				break;
+		}
+	}
+
+	expected_len = get_expected_len(av->type);
+
+	LM_INFO("uri=%.*s nonce=%.*s response=%.*s qop=%.*s nc=%.*s cnonce=%.*s "
+			"hbody=%.*s\n",
+			uri.len, uri.s, nonce.len, nonce.s, response_hex.len, response_hex.s,
+			qop_str.len, qop_str.s, nc.len, nc.s, cnonce.len, cnonce.s, expected_len,
+			hbody);
 
 	if(qop != QOP_UNSPEC) {
 		/* if QOP is sent, nc must be specified */
@@ -1065,24 +1090,48 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 		case AUTH_MD5:
 			calc_HA1(HA_MD5, &username /*&private_identity*/, &realm,
 					&(av->authorization), &(av->authenticate), &cnonce, ha1);
-			calc_response(ha1, &(av->authenticate), &nc, &cnonce, &qop_str,
+			calc_response(HA_MD5, ha1, &(av->authenticate), &nc, &cnonce, &qop_str,
 					qop == QOP_AUTHINT, &msg->first_line.u.request.method, &uri,
 					hbody, expected);
 			LM_INFO("UE said: %.*s and we expect %.*s ha1 %.*s (%.*s)\n",
-					response16.len, response16.s,
-					/*av->authorization.len,av->authorization.s,*/ 32, expected,
-					32, ha1, msg->first_line.u.request.method.len,
+					response_hex.len, response_hex.s,
+					/*av->authorization.len,av->authorization.s,*/ expected_len, expected,
+					expected_len, ha1, msg->first_line.u.request.method.len,
+					msg->first_line.u.request.method.s);
+			break;
+		case AUTH_SHA256:
+			calc_HA1(HA_SHA256, &username /*&private_identity*/, &realm,
+					&(av->authorization), &(av->authenticate), &cnonce, ha1);
+			calc_response(HA_SHA256, ha1, &(av->authenticate), &nc, &cnonce, &qop_str,
+					qop == QOP_AUTHINT, &msg->first_line.u.request.method, &uri,
+					hbody, expected);
+			LM_INFO("UE said: %.*s and we expect %.*s ha1 %.*s (%.*s)\n",
+					response_hex.len, response_hex.s,
+					/*av->authorization.len,av->authorization.s,*/ expected_len, expected,
+					expected_len, ha1, msg->first_line.u.request.method.len,
+					msg->first_line.u.request.method.s);
+			break;
+		case AUTH_SHA512_256:
+			calc_HA1(HA_SHA512_256, &username /*&private_identity*/, &realm,
+					&(av->authorization), &(av->authenticate), &cnonce, ha1);
+			calc_response(HA_SHA512_256, ha1, &(av->authenticate), &nc, &cnonce, &qop_str,
+					qop == QOP_AUTHINT, &msg->first_line.u.request.method, &uri,
+					hbody, expected);
+			LM_INFO("UE said: %.*s and we expect %.*s ha1 %.*s (%.*s)\n",
+					response_hex.len, response_hex.s,
+					/*av->authorization.len,av->authorization.s,*/ expected_len, expected,
+					expected_len, ha1, msg->first_line.u.request.method.len,
 					msg->first_line.u.request.method.s);
 			break;
 		case AUTH_SIP_DIGEST:
 		case AUTH_DIGEST:
 			// memcpy of received HA1
-			memcpy(ha1, av->authorization.s, HASHHEXLEN);
-			calc_response(ha1, &(av->authenticate), &nc, &cnonce, &qop_str,
+			memcpy(ha1, av->authorization.s, MD5HASHHEXLEN);
+			calc_response(HA_MD5, ha1, &(av->authenticate), &nc, &cnonce, &qop_str,
 					qop == QOP_AUTHINT, &msg->first_line.u.request.method, &uri,
 					hbody, expected);
 			LM_INFO("UE said: %.*s and we expect %.*s ha1 %.*s (%.*s)\n",
-					response16.len, response16.s, 32, expected, 32, ha1,
+					response_hex.len, response_hex.s, expected_len, expected, expected_len, ha1,
 					msg->first_line.u.request.method.len,
 					msg->first_line.u.request.method.s);
 			break;
@@ -1095,8 +1144,8 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 
 	expires = cscf_get_max_expires(msg, 0);
 
-	if(response16.len == expected_len
-			&& strncasecmp(response16.s, expected, response16.len) == 0) {
+	if(response_hex.len == expected_len
+			&& strncasecmp(response_hex.s, (const char *)expected, response_hex.len) == 0) {
 		if(max_nonce_reuse > 0 && av->status == AUTH_VECTOR_SENT) {
 			/* first use of a reusable vector */
 			/* set the vector's new timeout */
@@ -1155,11 +1204,30 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 		if(add_authinfo_hdr
 				&& expires != 0 /* don't add auth. info if de-registration */) {
 			/* calculate rspauth */
-			calc_response(ha1, &nonce, &nc, &cnonce, &qop_str,
+			switch(av->type) {
+			case AUTH_SIP_DIGEST:
+			case AUTH_DIGEST:
+			case AUTH_AKAV1_MD5:
+			case AUTH_AKAV2_MD5:
+			case AUTH_MD5:
+				calc_response(HA_MD5, ha1, &nonce, &nc, &cnonce, &qop_str,
 					qop == QOP_AUTHINT, 0, &uri, hbody, rspauth);
-
+				break;
+			case AUTH_SHA256:
+				calc_response(HA_SHA256, ha1, &nonce, &nc, &cnonce, &qop_str,
+					qop == QOP_AUTHINT, 0, &uri, hbody, rspauth);
+				break;
+			case AUTH_SHA512_256:
+				calc_response(HA_SHA512_256, ha1, &nonce, &nc, &cnonce, &qop_str,
+					qop == QOP_AUTHINT, 0, &uri, hbody, rspauth);
+				break;
+			default:
+				calc_response(HA_MD5, ha1, &nonce, &nc, &cnonce, &qop_str,
+					qop == QOP_AUTHINT, 0, &uri, hbody, rspauth);
+				break;
+			}
 			add_authinfo_resp_hdr(
-					msg, *next_nonce, qop_str, rspauth, cnonce, nc);
+				msg, *next_nonce, qop_str, rspauth, cnonce, nc);
 		}
 
 
@@ -1182,7 +1250,7 @@ int ims_authenticate(struct sip_msg *msg, str *prealm, int is_proxy_auth)
 		LM_DBG("UE said: %.*s, but we expect %.*s : authenticate(b64) is "
 			   "[%.*s], authenticate(hex) is [%.*s], authorise is [%d] "
 			   "[%.*s]\n",
-				response16.len, response16.s, 32, expected,
+				response_hex.len, response_hex.s, expected_len, expected,
 				av->authenticate.len, av->authenticate.s, authenticate_hex_len,
 				authenticate_hex, authorise_len, authorise_len, authorise);
 		//        /* check for auts in authorization header - if it is then we need to resync */
@@ -1395,7 +1463,7 @@ auth_vector *new_auth_vector(int item_number, str auth_scheme, str authenticate,
 		str authorization, str ck, str ik)
 {
 	auth_vector *x = 0;
-	char base16_ck[32 + 1] = {0};
+	char base16_ck[SHA256HASHHEXLEN + 1] = {0};
 	int base16_ck_len = 0;
 	x = shm_malloc(sizeof(auth_vector));
 	if(!x) {
@@ -1443,7 +1511,9 @@ auth_vector *new_auth_vector(int item_number, str auth_scheme, str authenticate,
 			break;
 
 		case AUTH_MD5:
-			/* MD5 */
+		case AUTH_SHA256:
+		case AUTH_SHA512_256:
+			/* MD5, SHA-256, SHA-512/256 */
 			x->authenticate.len = authenticate.len * 2;
 			x->authenticate.s = shm_malloc(x->authenticate.len);
 			if(!x->authenticate.s) {
@@ -1552,7 +1622,7 @@ auth_vector *new_auth_vector(int item_number, str auth_scheme, str authenticate,
 	x->expires = 0;
 
 	if(x->ck.len > 0 && x->ck.s) {
-		base16_ck_len = bin_to_base16(x->ck.s, 16, base16_ck);
+		base16_ck_len = bin_to_base16(x->ck.s, x->ck.len, base16_ck);
 		if(base16_ck_len)
 			LM_DBG("new auth-vector with ck [%s] with status %d\n", base16_ck,
 					x->status);
@@ -1822,7 +1892,7 @@ int pack_challenge(
 		struct sip_msg *msg, str realm, auth_vector *av, int is_proxy_auth)
 {
 	str x = {0, 0};
-	char ck[32], ik[32];
+	char ck[SHA256HASHHEXLEN], ik[SHA256HASHHEXLEN];
 	int ck_len, ik_len;
 	str *auth_prefix = is_proxy_auth ? &S_Proxy : &S_WWW;
 	str qop;
@@ -1877,7 +1947,7 @@ int pack_challenge(
 			/* this one continues into the next one */
 		case AUTH_MD5:
 			/* FOKUS MD5 */
-			x.len = S_Authorization_MD5.len + auth_prefix->len + realm.len
+			x.len = S_Authorization.len + auth_prefix->len + realm.len
 					+ av->authenticate.len + algorithm_types[av->type].len
 					+ qop.len;
 			x.s = pkg_malloc(x.len);
@@ -1885,10 +1955,26 @@ int pack_challenge(
 				LM_ERR("pack_challenge: Error allocating %d bytes\n", x.len);
 				goto error;
 			}
-			sprintf(x.s, S_Authorization_MD5.s, auth_prefix->len,
+			sprintf(x.s, S_Authorization.s, auth_prefix->len,
 					auth_prefix->s, realm.len, realm.s, av->authenticate.len,
 					av->authenticate.s, algorithm_types[AUTH_MD5].len,
 					algorithm_types[AUTH_MD5].s, qop.len, qop.s);
+			x.len = strlen(x.s);
+			break;
+		case AUTH_SHA256:
+			/* WINGCON SHA-256 */
+			x.len = S_Authorization.len + auth_prefix->len + realm.len
+					+ av->authenticate.len + algorithm_types[av->type].len
+					+ qop.len;
+			x.s = pkg_malloc(x.len);
+			if(!x.s) {
+				LM_ERR("pack_challenge: Error allocating %d bytes\n", x.len);
+				goto error;
+			}
+			sprintf(x.s, S_Authorization.s, auth_prefix->len,
+					auth_prefix->s, realm.len, realm.s, av->authenticate.len,
+					av->authenticate.s, algorithm_types[AUTH_SHA256].len,
+					algorithm_types[AUTH_SHA256].s, qop.len, qop.s);
 			x.len = strlen(x.s);
 			break;
 
@@ -1928,7 +2014,7 @@ int add_authinfo_resp_hdr(struct sip_msg *msg, str nextnonce, str qop,
 									   "nc=%.*s\r\n";
 
 	authinfo_hdr.len =
-			sizeof(authinfo_fmt) + nextnonce.len + qop.len + HASHHEXLEN
+			sizeof(authinfo_fmt) + nextnonce.len + qop.len + MD5HASHHEXLEN
 			+ cnonce.len + nc.len
 			- 20 /* format string parameters */ - 1 /* trailing \0 */;
 	authinfo_hdr.s = pkg_malloc(authinfo_hdr.len + 1);
@@ -1939,7 +2025,7 @@ int add_authinfo_resp_hdr(struct sip_msg *msg, str nextnonce, str qop,
 		goto error;
 	}
 	snprintf(authinfo_hdr.s, authinfo_hdr.len + 1, authinfo_fmt, nextnonce.len,
-			nextnonce.s, qop.len, qop.s, HASHHEXLEN, rspauth, cnonce.len,
+			nextnonce.s, qop.len, qop.s, MD5HASHHEXLEN, rspauth, cnonce.len,
 			cnonce.s, nc.len, nc.s);
 	LM_DBG("authinfo hdr built: %.*s", authinfo_hdr.len, authinfo_hdr.s);
 	if(ims_add_header_rpl(msg, &authinfo_hdr)) {
