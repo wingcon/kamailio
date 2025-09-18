@@ -366,40 +366,82 @@ success:
 		else if(tmp->ha1.len) {
 			if(tmp->response_auth.len) //HSS check
 			{
-				memset(ha1_hex, 0, HASHHEXLEN + 1);
-				memcpy(ha1_hex, tmp->ha1.s,
-						tmp->ha1.len > HASHHEXLEN ? 32 : tmp->ha1.len);
+				switch(get_algorithm_type(tmp->auth_scheme)) {
+					case AUTH_SHA256:
+					case AUTH_SHA512_256:
+						memset(ha1_hex, 0, SHA256HASHHEXLEN + 1);
+						memcpy(ha1_hex, tmp->ha1.s,
+								tmp->ha1.len > SHA256HASHHEXLEN ? 64 : tmp->ha1.len);
 
-				etsi_nonce.len = tmp->authenticate.len / 2;
-				etsi_nonce.s = pkg_malloc(etsi_nonce.len);
-				if(!etsi_nonce.s) {
-					LM_ERR("error allocating %d bytes\n", etsi_nonce.len);
-					goto done;
-				}
-				etsi_nonce.len = base16_to_bin(tmp->authenticate.s,
-						tmp->authenticate.len, etsi_nonce.s);
+						etsi_nonce.len = tmp->authenticate.len / 2;
+						etsi_nonce.s = pkg_malloc(etsi_nonce.len);
+						if(!etsi_nonce.s) {
+							LM_ERR("error allocating %d bytes\n", etsi_nonce.len);
+							goto done;
+						}
+						etsi_nonce.len = base16_to_bin(tmp->authenticate.s,
+								tmp->authenticate.len, etsi_nonce.s);
 
-				calc_response(ha1_hex, &etsi_nonce, &empty_s, &empty_s,
-						&empty_s, 0, &(req->first_line.u.request.method),
-						&scscf_name_str, 0, result_hex);
-				pkg_free(etsi_nonce.s);
+						calc_response(HA_SHA256,ha1_hex, &etsi_nonce, &empty_s, &empty_s,
+								&empty_s, 0, &(req->first_line.u.request.method),
+								&scscf_name_str, 0, result_hex);
+						pkg_free(etsi_nonce.s);
 
-				if(tmp->response_auth.len != 32
-						|| strncasecmp(tmp->response_auth.s, result_hex, 32)) {
-					LM_ERR("The HSS' Response-Auth is different from what we "
-						   "compute locally!\n"
-						   " BUT! If you sent an MAR with auth scheme unknown "
-						   "(HSS-Selected Authentication), this is normal.\n"
-						   "HA1=\t|%s|\nNonce=\t|%.*s|\nMethod=\t|%.*s|\nuri="
-						   "\t|%.*s|\nxresHSS=\t|%.*s|\nxresSCSCF=\t|%s|\n",
-							ha1_hex, tmp->authenticate.len, tmp->authenticate.s,
-							req->first_line.u.request.method.len,
-							req->first_line.u.request.method.s,
-							scscf_name_str.len, scscf_name_str.s,
-							tmp->response_auth.len, tmp->response_auth.s,
-							result_hex);
-					//stateful_register_reply(msg,514,MSG_514_HSS_AUTH_FAILURE);
-					//goto done;
+						if(tmp->response_auth.len != 64
+								|| strncasecmp(tmp->response_auth.s, (const char *)result_hex, 64)) {
+							LM_ERR("The HSS' Response-Auth is different from what we "
+								"compute locally!\n"
+								" BUT! If you sent an MAR with auth scheme unknown "
+								"(HSS-Selected Authentication), this is normal.\n"
+								"HA1=\t|%s|\nNonce=\t|%.*s|\nMethod=\t|%.*s|\nuri="
+								"\t|%.*s|\nxresHSS=\t|%.*s|\nxresSCSCF=\t|%s|\n",
+									ha1_hex, tmp->authenticate.len, tmp->authenticate.s,
+									req->first_line.u.request.method.len,
+									req->first_line.u.request.method.s,
+									scscf_name_str.len, scscf_name_str.s,
+									tmp->response_auth.len, tmp->response_auth.s,
+									result_hex);
+							//stateful_register_reply(msg,514,MSG_514_HSS_AUTH_FAILURE);
+							//goto done;
+						}
+						break;
+					default:
+						memset(ha1_hex, 0, MD5HASHHEXLEN + 1);
+						memcpy(ha1_hex, tmp->ha1.s,
+								tmp->ha1.len > MD5HASHHEXLEN ? 32 : tmp->ha1.len);
+
+						etsi_nonce.len = tmp->authenticate.len / 2;
+						etsi_nonce.s = pkg_malloc(etsi_nonce.len);
+						if(!etsi_nonce.s) {
+							LM_ERR("error allocating %d bytes\n", etsi_nonce.len);
+							goto done;
+						}
+						etsi_nonce.len = base16_to_bin(tmp->authenticate.s,
+								tmp->authenticate.len, etsi_nonce.s);
+
+						calc_response(HA_MD5,ha1_hex, &etsi_nonce, &empty_s, &empty_s,
+								&empty_s, 0, &(req->first_line.u.request.method),
+								&scscf_name_str, 0, result_hex);
+						pkg_free(etsi_nonce.s);
+
+						if(tmp->response_auth.len != 32
+								|| strncasecmp(tmp->response_auth.s, (const char *)result_hex, 32)) {
+							LM_ERR("The HSS' Response-Auth is different from what we "
+								"compute locally!\n"
+								" BUT! If you sent an MAR with auth scheme unknown "
+								"(HSS-Selected Authentication), this is normal.\n"
+								"HA1=\t|%s|\nNonce=\t|%.*s|\nMethod=\t|%.*s|\nuri="
+								"\t|%.*s|\nxresHSS=\t|%.*s|\nxresSCSCF=\t|%s|\n",
+									ha1_hex, tmp->authenticate.len, tmp->authenticate.s,
+									req->first_line.u.request.method.len,
+									req->first_line.u.request.method.s,
+									scscf_name_str.len, scscf_name_str.s,
+									tmp->response_auth.len, tmp->response_auth.s,
+									result_hex);
+							//stateful_register_reply(msg,514,MSG_514_HSS_AUTH_FAILURE);
+							//goto done;
+						}
+						break;
 				}
 			}
 			av = new_auth_vector(tmp->item_number, tmp->auth_scheme,

@@ -51,7 +51,7 @@
 #include "../../core/parser/msg_parser.h"
 #include "api.h"
 #include "conversion.h"
-#include "rfc2617.h"
+#include "rfc7616.h"
 #include "sip_messages.h"
 #include "cxdx_mar.h"
 #include "../tm/h_table.h"
@@ -76,7 +76,10 @@ enum authorization_types
 	AUTH_SIP_DIGEST = 6,
 	/* TISPAN */
 	AUTH_HTTP_DIGEST_MD5 = 7,
-	AUTH_NASS_BUNDLED = 8
+	AUTH_NASS_BUNDLED = 8,
+	/* WINGCON */
+	AUTH_SHA256 = 9,
+	AUTH_SHA512_256 = 10
 };
 
 /** Enumeration for the Authorization Vector status */

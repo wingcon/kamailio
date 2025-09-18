@@ -188,6 +188,12 @@ void print_cred(dig_cred_t *_c)
 			case ALG_OTHER:
 				printf("ALG_OTHER\n");
 				break;
+			case ALG_SHA256:
+				printf("ALG_SHA256\n");
+				break;
+			case ALG_SHA256SESS:
+				printf("ALG_SHA256SESS\n");
+				break;
 		}
 
 		printf("Cnonce    = \'%.*s\'\n", _c->cnonce.len, _c->cnonce.s);
