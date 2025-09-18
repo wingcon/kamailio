@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2025 WINGcon AG, tobias.tress@wingcon.com
- * Copyright (C) 2025 WINGcon AG, uzay.durdu@wingcon.com
+ * Copyright (C) 2025 WINGcon AG, info(at)wingcon(dot)com
  *
  * This code extends the HTTP Digest Access Authentication implementation
  * based on RFC-2617 originally written by Dragos Vingarzan at the Fraunhofer
@@ -8,8 +7,8 @@
  * Richard Good at Smile Communications, Pty. Ltd.
  * It adds support for RFC-7616, including SHA-256 and SHA-512/256 hashing.
  * 
- * Author: Tobias Tress (tobias(dot)tress(at)wingcon(dot)com)
- * Author: Uzay Durdu (uzay(dot)durdu(at)wingcon(dot)com)
+ * Author: Tobias Tress
+ * Author: Uzay Durdu
  *
  * NB: A lot of this code was originally part of OpenIMSCore,
  * Fraunhofer FOKUS.
