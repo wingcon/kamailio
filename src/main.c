@@ -148,6 +148,7 @@
 #include "core/timer_proc.h"
 #include "core/srapi.h"
 #include "core/receive.h"
+#include "core/coreparam.h"
 
 #ifdef DEBUG_DMALLOC
 #include <dmalloc.h>
@@ -168,8 +169,8 @@ Usage: " NAME " [options]\n\
 Options:\n\
     -a mode      Auto aliases mode: enable with yes or on,\n\
                   disable with no or off\n\
-    --alias=val  Add an alias, the value has to be '[proto:]hostname[:port]'\n\
-                  (like for 'alias' global parameter)\n\
+    --alias=val  Add a domain alias, the value has to be '[proto:]hostname[:port]'\n\
+                  (like for 'alias'/'domain' global parameter)\n\
     --atexit=val Control atexit callbacks execution from external libraries\n\
                   which may access destroyed shm memory causing crash on shutdown.\n\
                   Can be y[es] or 1 to enable atexit callbacks, n[o] or 0 to disable,\n\
@@ -188,6 +189,8 @@ Options:\n\
                   -D..do not fork (almost) anyway;\n\
                   -DD..do not daemonize creator;\n\
                   -DDD..daemonize (default)\n\
+    --domain=val Add a domain alias, the value has to be '[proto:]hostname[:port]'\n\
+                  (like for 'alias'/'domain' global parameter)\n\
     -e           Log messages printed in terminal colors (requires -E)\n\
     -E           Log to stderr\n\
     -f file      Configuration file (default: " CFG_FILE ")\n\
@@ -195,6 +198,7 @@ Options:\n\
     -G file      Create a pgid file\n\
     -h           This help message\n\
     --help       Long option for `-h`\n\
+    --iuid=val   Instance unique id\n\
     -I           Print more internal compile flags and options\n\
     -K           Turn on \"via:\" host checking when forwarding replies\n\
     -l address   Listen on the specified address/interface (multiple -l\n\
@@ -1486,6 +1490,7 @@ int main_loop(void)
 
 		/* init log prefix format */
 		log_prefix_init();
+		log_prefix_set(NULL);
 
 		/* init childs with rank==PROC_INIT before forking any process,
 		 * this is a place for delayed (after mod_init) initializations
@@ -1762,6 +1767,7 @@ int main_loop(void)
 
 		/* init log prefix format */
 		log_prefix_init();
+		log_prefix_set(NULL);
 
 		/* init childs with rank==PROC_INIT before forking any process,
 		 * this is a place for delayed (after mod_init) initializations
@@ -2219,10 +2225,14 @@ int main(int argc, char **argv)
 	int option_index = 0;
 
 #define KARGOPTVAL 1024
-	static struct option long_options[] = {/* long options with short variant */
-			{"help", no_argument, 0, 'h'}, {"version", no_argument, 0, 'v'},
+	/* clang-format off */
+	static struct option long_options[] = {
+			/* long options with short variant */
+			{"help", no_argument, 0, 'h'},
+			{"version", no_argument, 0, 'v'},
 			/* long options without short variant */
 			{"alias", required_argument, 0, KARGOPTVAL},
+			{"domain", required_argument, 0, KARGOPTVAL},
 			{"subst", required_argument, 0, KARGOPTVAL + 1},
 			{"substdef", required_argument, 0, KARGOPTVAL + 2},
 			{"substdefs", required_argument, 0, KARGOPTVAL + 3},
@@ -2233,7 +2243,11 @@ int main(int argc, char **argv)
 			{"debug", required_argument, 0, KARGOPTVAL + 8},
 			{"cfg-print", no_argument, 0, KARGOPTVAL + 9},
 			{"atexit", required_argument, 0, KARGOPTVAL + 10},
-			{"all-errors", no_argument, 0, KARGOPTVAL + 11}, {0, 0, 0, 0}};
+			{"all-errors", no_argument, 0, KARGOPTVAL + 11},
+			{"iuid", required_argument, 0, KARGOPTVAL + 12},
+			{0, 0, 0, 0}
+		};
+	/* clang-format on */
 
 	if(argc > 1) {
 		/* checks for common wrong arguments */
@@ -2610,6 +2624,16 @@ int main(int argc, char **argv)
 				server_id = (int)strtol(optarg, &tmp, 10);
 				if((tmp == 0) || (*tmp)) {
 					LM_ERR("bad server_id value: %s\n", optarg);
+					goto error;
+				}
+				break;
+			case KARGOPTVAL + 12:
+				if(optarg == NULL) {
+					fprintf(stderr, "bad instance unique id parameter\n");
+					goto error;
+				}
+				if(ksr_iuid_set(optarg, 0) < 0) {
+					fprintf(stderr, "failed to set instance unique id\n");
 					goto error;
 				}
 				break;
@@ -3050,8 +3074,9 @@ int main(int argc, char **argv)
 		dont_fork = dont_fork == 1;
 	}
 	/* init locks first */
-	if(init_lock_ops() != 0)
+	if(init_lock_ops() != 0) {
 		goto error;
+	}
 #ifdef USE_TCP
 #ifdef USE_TLS
 	if(tcp_disable)
@@ -3166,12 +3191,12 @@ int main(int argc, char **argv)
 
 	if(dont_fork) {
 		fprintf(stderr, "WARNING: no fork mode %s\n",
-				(udp_listen) ? (
-						(udp_listen->next)
-								? "and more than one listen address found "
-								  "(will use only the first one)"
-								: "")
-							 : "and no udp listen address found");
+				(udp_listen)
+						? ((udp_listen->next) ? "and more than one listen "
+												"address found "
+												"(will use only the first one)"
+											  : "")
+						: "and no udp listen address found");
 	}
 	if(config_check) {
 		fprintf(stderr, "config file ok, exiting...\n");
@@ -3445,7 +3470,7 @@ error:
 int SYMBOL_EXPORT pthread_mutex_init(
 		pthread_mutex_t *__mutex, const pthread_mutexattr_t *__mutexattr)
 {
-	static int (*real_pthread_mutex_init)(pthread_mutex_t * __mutex,
+	static int (*real_pthread_mutex_init)(pthread_mutex_t *__mutex,
 			const pthread_mutexattr_t *__mutexattr) = 0;
 	pthread_mutexattr_t attr;
 	int ret;

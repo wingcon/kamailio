@@ -180,11 +180,8 @@ set(MOD_LIST_SNMPSTATS snmpstats)
 # * modules depending on expat library
 set(MOD_LIST_XMPP xmpp)
 
-# * modules depending on bdb (db4) library
-set(MOD_LIST_BERKELEY db_berkeley)
-
 # * modules depending on curl library
-set(MOD_LIST_UTILS utils http_client lost slack)
+set(MOD_LIST_UTILS utils http_client lost slack auth_web3)
 
 # * modules depending on curl and libevent2 library
 set(MOD_LIST_HTTP_ASYNC http_async_client)
@@ -242,7 +239,7 @@ set(MOD_LIST_PRESENCE
 set(MOD_LIST_LUA app_lua)
 
 # * modules depending on perl library
-set(MOD_LIST_PERLDEPS app_perl db_perlvdb)
+set(MOD_LIST_PERLDEPS app_perl)
 
 # * modules depending on python library
 set(MOD_LIST_PYTHON app_python)
@@ -301,9 +298,6 @@ set(MOD_LIST_IMS
     ims_diameter_server
     ims_ipsec_pcscf
 )
-
-# * modules depending on java library
-set(MOD_LIST_JAVA app_java)
 
 # * modules depending on gzip library
 set(MOD_LIST_GZCOMPRESS gzcompress)
@@ -391,7 +385,6 @@ set(MOD_LIST_ALL
     ${MOD_LIST_PERLDEPS}
     ${MOD_LIST_CPL}
     ${MOD_LIST_XMPP}
-    ${MOD_LIST_BERKELEY}
     ${MOD_LIST_UTILS}
     ${MOD_LIST_MEMCACHED}
     ${MOD_LIST_TLSDEPS}
@@ -410,7 +403,6 @@ set(MOD_LIST_ALL
     ${MOD_LIST_IMS}
     ${MOD_LIST_ORACLE}
     ${MOD_LIST_OUTBOUND}
-    ${MOD_LIST_JAVA}
     ${MOD_LIST_DNSSEC}
     ${MOD_LIST_SCTP}
     ${MOD_LIST_AUTHEPH}
@@ -526,9 +518,6 @@ set(MODULE_GROUP_KSNMPSTATS ${MOD_LIST_SNMPSTATS})
 # pkg xmpp module
 set(MODULE_GROUP_KXMPP ${MOD_LIST_XMPP})
 
-# pkg berkeley module
-set(MODULE_GROUP_KBERKELEY ${MOD_LIST_BERKELEY})
-
 # pkg ldap modules
 set(MODULE_GROUP_KLDAP ${MOD_LIST_LDAP})
 
@@ -545,7 +534,7 @@ set(MODULE_GROUP_KMEMCACHED ${MOD_LIST_MEMCACHED})
 set(MODULE_GROUP_KTLS_BASIC ${MOD_LIST_TLSDEPS})
 
 # pkg tls module with curl
-if(KTLS_INCLUDE_TLSA)
+if(DEFINED ENV{KTLS_INCLUDE_TLSA})
   set(MODULE_GROUP_KTLS ${MOD_LIST_TLSDEPS} ${MOD_LIST_TLSA})
 else()
   set(MODULE_GROUP_KTLS ${MOD_LIST_TLSDEPS})
@@ -602,9 +591,6 @@ set(MODULE_GROUP_KIMS ${MOD_LIST_IMS})
 
 # pkg outbound module
 set(MODULE_GROUP_KOUTBOUND ${MOD_LIST_OUTBOUND})
-
-# pkg java module
-set(MODULE_GROUP_KJAVA ${MOD_LIST_JAVA})
 
 # pkg dnssec module
 set(MODULE_GROUP_KDNSSEC ${MOD_LIST_DNSSEC})
@@ -699,13 +685,13 @@ set(MODULE_GROUP_PACKAGE_GROUPS
     KPERL
     KSNMPSTATS
     KXMPP
-    KBERKELEY
     KLDAP
     KUTILS
     KHTTP_ASYNC
     KMEMCACHED
     KTLS_BASIC
     KTLS
+    KTLSA
     KTLS_WOLFSSL
     KWEBSOCKET
     KPRESENCE

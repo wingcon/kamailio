@@ -73,6 +73,7 @@ int goto_on_local_req = -1; /* default disabled */
 static char from_tag[FROM_TAG_LEN + 1];
 
 extern str tm_event_callback;
+extern str tm_evcb_local_ack_sent;
 /*
  * Initialize UAC
  */
@@ -675,11 +676,12 @@ static inline int t_uac_prepare(
 #ifdef DIALOG_CALLBACKS
 	run_trans_dlg_callbacks(uac_r->dialog, new_cell, request);
 #endif /* DIALOG_CALLBACKS */
-	if(dst_req)
+	if(dst_req != NULL) {
 		*dst_req = request;
-	if(dst_cell)
+	}
+	if(dst_cell != NULL) {
 		*dst_cell = new_cell;
-	else if(is_ack && dst_req == 0) {
+	} else if(is_ack && dst_req == NULL) {
 		free_cell(new_cell);
 	}
 
@@ -753,6 +755,7 @@ static inline int send_prepared_request_impl(
 	struct ua_client *uac;
 	struct ip_addr ip; /* logging */
 	int ret;
+	int osnd;
 
 	t = request->my_T;
 	uac = &t->uac[branch];
@@ -769,9 +772,11 @@ static inline int send_prepared_request_impl(
 	LM_DBG("uac: %p  branch: %d  to %s:%d\n", uac, branch, ip_addr2a(&ip),
 			su_getport(&uac->request.dst.to));
 
-	if(run_onsend(p_msg, &uac->request.dst, uac->request.buffer,
-			   uac->request.buffer_len)
-			== 0) {
+	osnd = run_onsend(p_msg, &uac->request.dst, uac->request.buffer,
+			uac->request.buffer_len);
+	t_uas_request_clean_parsed(t);
+
+	if(osnd == 0) {
 		uac->last_received = _tm_reply_408_code;
 		su2ip_addr(&ip, &uac->request.dst.to);
 		LM_DBG("onsend_route dropped msg. to %s:%d (%d)\n", ip_addr2a(&ip),
@@ -952,6 +957,46 @@ void free_local_ack_unsafe(struct retr_buf *lack)
 	shm_free_unsafe(lack);
 }
 
+int uac_evrt_local_ack_sent(sip_msg_t *rpl)
+{
+	int route_no;
+	run_act_ctx_t ctx;
+	int rtb;
+	str evname = str_init("tm:local-ack-sent");
+	sr_kemi_eng_t *keng = NULL;
+
+	route_no = route_lookup(&event_rt, "tm:local-ack-sent");
+	if(route_no >= 0) {
+		if(event_rt.rlist[route_no] == 0) {
+			LM_WARN("event_route[tm:local-ack-sent] is empty\n");
+			return -1;
+		}
+	} else {
+		keng = sr_kemi_eng_get();
+		if(keng == NULL || tm_evcb_local_ack_sent.len <= 0) {
+			LM_DBG("event route not defined and no kemi engine\n");
+			return -2;
+		}
+	}
+
+	rtb = get_route_type();
+	set_route_type(EVENT_ROUTE);
+	init_run_actions_ctx(&ctx);
+	if(route_no >= 0) {
+		run_top_route(event_rt.rlist[route_no], rpl, &ctx);
+	} else {
+		if(sr_kemi_ctx_route(keng, &ctx, rpl, EVENT_ROUTE,
+				   &tm_evcb_local_ack_sent, &evname)
+				< 0) {
+			LM_ERR("error running event route kemi callback\n");
+			return -1;
+		}
+	}
+	set_route_type(rtb);
+
+	return 0;
+}
+
 /**
  * @return:
  * 	0: success
@@ -1030,6 +1075,7 @@ int ack_local_uac(struct cell *trans, str *hdrs, str *body)
 				TMCB_LOCAL_F, 0 /* branch */, TYPE_LOCAL_ACK);
 		run_trans_callbacks_off_params(
 				TMCB_REQUEST_SENT, trans, &onsend_params);
+		uac_evrt_local_ack_sent(trans->uac[0].reply);
 	}
 
 	ret = 0;

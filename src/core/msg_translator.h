@@ -70,6 +70,15 @@ struct hostport
 	str *port;
 };
 
+typedef struct viabranch
+{
+	str cookie;
+	str shashidx;
+	unsigned int vhashidx;
+	str transid;
+	str sbranchidx;
+	unsigned int vbranchidx;
+} viabranch_t;
 
 #define set_hostport(hp, msg)                                              \
 	do {                                                                   \
@@ -118,9 +127,11 @@ char *via_builder(unsigned int *len, sip_msg_t *msg,
 char *create_via_hf(unsigned int *len, struct sip_msg *msg,
 		struct dest_info *send_info /* where to send the reply */, str *branch);
 
+int via_branch_parser(str *vbranch, viabranch_t *vb);
+
 int branch_builder(unsigned int hash_index,
 		/* only either parameter useful */
-		unsigned int label, char *char_v, int branch,
+		unsigned int label, char *char_v, str *xval, int branch,
 		/* output value: string and actual length */
 		char *branch_str, int *len);
 

@@ -13,18 +13,19 @@ jobs:
       contents: read # to fetch code (actions/checkout)
     steps:
       - name: Check out the repository to the runner
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - name: Run clang-format check
         uses: wolletd/clang-format-checker@v1.12
         with:
           target-ref: master
+          clang-version: 18
   check-cmake-format:
     runs-on: ubuntu-latest
     permissions:
       contents: read # to fetch code (actions/checkout)
     steps:
       - name: Check out scripts folder to the runner
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: master
           path: actions
@@ -32,11 +33,11 @@ jobs:
             .github/scripts/check-cmake-format.sh
           sparse-checkout-cone-mode: false
       - name: Check out the repository to the runner
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           path: source
           ref: ${{ github.event.pull_request.head.sha }}
-      - uses: awalsh128/cache-apt-pkgs-action@v1.5.3
+      - uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
           packages: cmake-format
       - name: Run scripts/check-cmake-format.sh
@@ -51,7 +52,7 @@ jobs:
       contents: read # to fetch code (actions/checkout)
     steps:
       - name: Check out scripts folder to the runner
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: master
           path: actions
@@ -59,7 +60,7 @@ jobs:
             .github/scripts/check-commit.sh
           sparse-checkout-cone-mode: false
       - name: Check out the repository to the runner
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           path: source
           ref: ${{ github.event.pull_request.head.sha }}
@@ -92,7 +93,7 @@ jobs:
             compilier: clang
     steps:
       - name: Check out the repository to the runner
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
       - uses: ammaraskar/gcc-problem-matcher@0.3.0
       - name: build
         run: |

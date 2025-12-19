@@ -749,7 +749,7 @@ modparam("dispatcher", "ds_probing_mode", 1)
 		<title>accessing the metrics</title>
 <programlisting format="linespecific">
 # using the command :
-kamcmd dispatcher.list
+kamctl rpc dispatcher.list
 ...
 DEST: {
 	URI: sip:1.2.3.4
@@ -1080,6 +1080,9 @@ end
 			state changes based on OPTIONS keepalives or the use of config
 			functions to set the state (e.g., ds_mark_dst(...)). If set to 1,
 			they are executed only on state change due to OPTIONS keepalives.
+			If set to 2, the event routes will always be executed when a state
+			change occurs, even if no previous state exists (for example, on
+			startup or reload).
 		</para>
 		<para>
 			Note that event routes are not executed on RPC commands setting
@@ -1138,7 +1141,9 @@ modparam("dispatcher", "ds_attrs_none", 1)
 		<para>
 		The 'anameX' is the attribute name and 'cnameX' is column name. The
 		additional columns must be added to database dispatcher table and their
-		type must be VARCHAR (string).
+		type must be a string type (VARCHAR, etc..) or integer type (UNSIGNED INT,
+		BIGINT, etc..). These fields can be a convenient way of loading IDs, or
+		additional related info into the 'attrs' XAVP when matching a dispatcher set.
 		</para>
 		<para>
 		<emphasis>
@@ -1560,7 +1565,7 @@ modparam("dispatcher", "ds_latency_estimator_alpha", 900)
 ...
 if (!ds_select_dst("1", "11")) { # use relative weight based load distribution
 ...
-# sample of output from 'kamcmd dispatcher.list'
+# sample of output from 'kamctl rpc dispatcher.list'
 DEST: {
 	URI: sip:192.168.0.1:5060
 	FLAGS: AP
@@ -2149,7 +2154,7 @@ onreply_route {
 		<function moreinfo="none">ds_oc_set_attrs(setid, uri, rval, tval, sval)</function>
 		</title>
 		<para>
-		Sets the overload control rate, time internval limit and sequence number
+		Sets the overload control rate, time interval limit and sequence number
 		for the destination record (setid, uri) following RFC7339 specifications.
 		</para>
 		<para>Description of parameters:</para>
@@ -2352,8 +2357,8 @@ DEST: {
 		</para>
 <programlisting  format="linespecific">
 ...
-# prototype: &kamcmd; dispatcher.ping_active _state_
-&kamcmd; dispatcher.ping_active 0
+# prototype: &kamctl; rpc dispatcher.ping_active _state_
+&kamctl; rpc dispatcher.ping_active 0
 ...
 </programlisting>
 	</section>

@@ -32,6 +32,10 @@ Federico Cabiddu
 
    <federico.cabiddu@gmail.com>
 
+Tyler Moore
+
+   <tmoore@dopensource.com>
+
    Copyright © 2004 FhG FOKUS
 
    Copyright © 2005 Voice Sistem
@@ -45,6 +49,8 @@ Federico Cabiddu
    Copyright © 2017, 2018 Julien chavanton, Flowroute
 
    Copyright © 2020 Federico Cabiddu, Libon
+
+   Copyright © 2025 Tyler Moore, dOpenSource
      __________________________________________________________________
 
    Table of Contents
@@ -831,7 +837,7 @@ modparam("dispatcher", "ds_probing_mode", 1)
 
    Example 1.28. accessing the metrics
 # using the command :
-kamcmd dispatcher.list
+kamctl rpc dispatcher.list
 ...
 DEST: {
         URI: sip:1.2.3.4
@@ -1041,7 +1047,9 @@ end
    executed. If set to 0, they are executed when the destination state
    changes based on OPTIONS keepalives or the use of config functions to
    set the state (e.g., ds_mark_dst(...)). If set to 1, they are executed
-   only on state change due to OPTIONS keepalives.
+   only on state change due to OPTIONS keepalives. If set to 2, the event
+   routes will always be executed when a state change occurs, even if no
+   previous state exists (for example, on startup or reload).
 
    Note that event routes are not executed on RPC commands setting the
    destination state.
@@ -1080,7 +1088,10 @@ modparam("dispatcher", "ds_attrs_none", 1)
 
    The 'anameX' is the attribute name and 'cnameX' is column name. The
    additional columns must be added to database dispatcher table and their
-   type must be VARCHAR (string).
+   type must be a string type (VARCHAR, etc..) or integer type (UNSIGNED
+   INT, BIGINT, etc..). These fields can be a convenient way of loading
+   IDs, or additional related info into the 'attrs' XAVP when matching a
+   dispatcher set.
 
    Default value is “empty”.
 
@@ -1344,7 +1355,7 @@ modparam("dispatcher", "ds_latency_estimator_alpha", 900)
 ...
 if (!ds_select_dst("1", "11")) { # use relative weight based load distribution
 ...
-# sample of output from 'kamcmd dispatcher.list'
+# sample of output from 'kamctl rpc dispatcher.list'
 DEST: {
         URI: sip:192.168.0.1:5060
         FLAGS: AP
@@ -1743,8 +1754,8 @@ onreply_route {
 
 4.19.  ds_oc_set_attrs(setid, uri, rval, tval, sval)
 
-   Sets the overload control rate, time internval limit and sequence
-   number for the destination record (setid, uri) following RFC7339
+   Sets the overload control rate, time interval limit and sequence number
+   for the destination record (setid, uri) following RFC7339
    specifications.
 
    Description of parameters:
@@ -1883,8 +1894,8 @@ DEST: {
 
    Example:
 ...
-# prototype: kamcmd dispatcher.ping_active _state_
-kamcmd dispatcher.ping_active 0
+# prototype: kamctl rpc dispatcher.ping_active _state_
+kamctl rpc dispatcher.ping_active 0
 ...
 
 5.6.  dispatcher.add
@@ -2385,7 +2396,7 @@ route[DISPATCH] {
         exit;
 }
 
-# Try next destionations in failure route
+# Try next destinations in failure route
 failure_route[RTF_DISPATCH] {
         if (t_is_canceled()) {
                 exit;

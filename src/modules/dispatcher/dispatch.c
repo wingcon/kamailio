@@ -1408,6 +1408,7 @@ int ds_load_db(void)
 
 		attrs.s = 0;
 		attrs.len = 0;
+		memset(ds_attrs_buf, 0, DS_ATTRS_MAXSIZE);
 		if(nrcols >= 5) {
 			if(!VAL_NULL(values + 4)) {
 				attrs.s = VAL_STR(values + 4).s;
@@ -1424,18 +1425,86 @@ int ds_load_db(void)
 				attrs.s = ds_attrs_buf;
 				pit = ds_db_extra_attrs_list;
 				for(nc = 5; nc < nrcols && pit != NULL; nc++) {
-					if(!VAL_NULL(values + nc)
-							&& strlen(VAL_STRING(values + nc)) > 0) {
-						plen = snprintf(attrs.s + attrs.len,
-								DS_ATTRS_MAXSIZE - attrs.len - 1, "%.*s=%s;",
-								pit->name.len, pit->name.s,
-								VAL_STRING(values + nc));
-						if(plen <= 0
-								|| plen >= DS_ATTRS_MAXSIZE - attrs.len - 1) {
-							LM_ERR("cannot build attrs buffer\n");
+					// NULL DB field values are ignored
+					if(VAL_NULL(values + nc)) {
+						pit = pit->next;
+						continue;
+					}
+					// implicit DB type conversion if supported type
+					switch(VAL_TYPE(values + nc)) {
+						case DB1_STR:
+						case DB1_STRING:
+							if(strlen(VAL_STRING(values + nc)) > 0) {
+								plen = snprintf(attrs.s + attrs.len,
+										DS_ATTRS_MAXSIZE - attrs.len - 1,
+										"%.*s=%s;", pit->name.len, pit->name.s,
+										VAL_STRING(values + nc));
+								if(plen <= 0
+										|| plen >= DS_ATTRS_MAXSIZE - attrs.len
+														   - 1) {
+									LM_ERR("cannot build attrs buffer\n");
+									goto err2;
+								}
+								attrs.len += plen;
+							}
+							break;
+						case DB1_INT:
+							plen = snprintf(attrs.s + attrs.len,
+									DS_ATTRS_MAXSIZE - attrs.len - 1,
+									"%.*s=%d;", pit->name.len, pit->name.s,
+									VAL_INT(values + nc));
+							if(plen <= 0
+									|| plen >= DS_ATTRS_MAXSIZE - attrs.len
+													   - 1) {
+								LM_ERR("cannot build attrs buffer\n");
+								goto err2;
+							}
+							attrs.len += plen;
+							break;
+						case DB1_UINT:
+							plen = snprintf(attrs.s + attrs.len,
+									DS_ATTRS_MAXSIZE - attrs.len - 1,
+									"%.*s=%u;", pit->name.len, pit->name.s,
+									VAL_UINT(values + nc));
+							if(plen <= 0
+									|| plen >= DS_ATTRS_MAXSIZE - attrs.len
+													   - 1) {
+								LM_ERR("cannot build attrs buffer\n");
+								goto err2;
+							}
+							attrs.len += plen;
+							break;
+						case DB1_BIGINT:
+							plen = snprintf(attrs.s + attrs.len,
+									DS_ATTRS_MAXSIZE - attrs.len - 1,
+									"%.*s=%lld;", pit->name.len, pit->name.s,
+									VAL_BIGINT(values + nc));
+							if(plen <= 0
+									|| plen >= DS_ATTRS_MAXSIZE - attrs.len
+													   - 1) {
+								LM_ERR("cannot build attrs buffer\n");
+								goto err2;
+							}
+							attrs.len += plen;
+							break;
+						case DB1_UBIGINT:
+							plen = snprintf(attrs.s + attrs.len,
+									DS_ATTRS_MAXSIZE - attrs.len - 1,
+									"%.*s=%llu;", pit->name.len, pit->name.s,
+									VAL_UBIGINT(values + nc));
+							if(plen <= 0
+									|| plen >= DS_ATTRS_MAXSIZE - attrs.len
+													   - 1) {
+								LM_ERR("cannot build attrs buffer\n");
+								goto err2;
+							}
+							attrs.len += plen;
+							break;
+						default:
+							LM_DBG("failure during checks of database field "
+								   "(%s) in dispatcher table\n",
+									query_cols[nc]->s);
 							goto err2;
-						}
-						attrs.len += plen;
 					}
 					pit = pit->next;
 				}
@@ -2276,6 +2345,16 @@ int ds_add_xavp_record(
 		return -1;
 	}
 
+	/* add dstidx field */
+	memset(&nxval, 0, sizeof(sr_xval_t));
+	nxval.type = SR_XTYPE_LONG;
+	nxval.v.l = pos;
+	if(xavp_add_value(&ds_xavp_dst_dstidx, &nxval, &nxavp) == NULL) {
+		xavp_destroy_list(&nxavp);
+		LM_ERR("failed to add destination dstidx xavp field\n");
+		return -1;
+	}
+
 	if(((ds_xavp_dst_mode & DS_XAVP_DST_SKIP_ATTRS) == 0)
 			&& (dsidx->dlist[pos].attrs.body.len > 0)) {
 		memset(&nxval, 0, sizeof(sr_xval_t));
@@ -2356,7 +2435,7 @@ int ds_add_xavp_record(
  */
 int ds_select_dst(struct sip_msg *msg, int set, int alg, int mode)
 {
-	return ds_select_dst_limit(msg, set, alg, 0, mode);
+	return ds_select_dst_limit(msg, set, alg, 0, mode, NULL);
 }
 
 /**
@@ -2366,8 +2445,8 @@ int ds_select_dst(struct sip_msg *msg, int set, int alg, int mode)
  * - mode specify to set address in R-URI or outbound proxy
  *
  */
-int ds_select_dst_limit(
-		sip_msg_t *msg, int set, int alg, uint32_t limit, int mode)
+int ds_select_dst_limit(sip_msg_t *msg, int set, int alg, uint32_t limit,
+		int mode, ds_selres_t *sres)
 {
 	int ret;
 	sr_xval_t nxval;
@@ -2384,7 +2463,7 @@ int ds_select_dst_limit(
 		vstate.limit = 0xffffffff;
 	}
 
-	ret = ds_manage_routes(msg, &vstate);
+	ret = ds_manage_routes(msg, &vstate, sres);
 	if(ret < 0) {
 		return ret;
 	}
@@ -2406,6 +2485,126 @@ int ds_select_dst_limit(
 	LM_DBG("selected target destinations: %d\n", vstate.cnt);
 
 	return ret;
+}
+
+int ds_select_routes_limit(
+		sip_msg_t *msg, str *srules, str *smode, int rlimit, ds_selres_t *sres)
+{
+	int vret = -1;
+	int gret = -1;
+	ds_selres_t gres = DS_SELRES_FAILED;
+	int i;
+
+	sr_xval_t nxval;
+	ds_select_state_t vstate;
+
+	memset(&vstate, 0, sizeof(ds_select_state_t));
+	vstate.limit = (uint32_t)rlimit;
+	if(vstate.limit == 0) {
+		LM_DBG("Limit set to 0 - forcing to unlimited\n");
+		vstate.limit = 0xffffffff;
+	}
+	i = 0;
+	while(i < srules->len) {
+		vstate.setid = 0;
+		for(; i < srules->len; i++) {
+			if(srules->s[i] < '0' || srules->s[i] > '9') {
+				if(srules->s[i] == '=') {
+					i++;
+					break;
+				} else {
+					LM_ERR("invalid character in [%.*s] at [%d]\n", srules->len,
+							srules->s, i);
+					return -1;
+				}
+			}
+			vstate.setid = (vstate.setid * 10) + (srules->s[i] - '0');
+		}
+		vstate.alg = 0;
+		for(; i < srules->len; i++) {
+			if(srules->s[i] < '0' || srules->s[i] > '9') {
+				if(srules->s[i] == ';') {
+					i++;
+					break;
+				} else {
+					LM_ERR("invalid character in [%.*s] at [%d]\n", srules->len,
+							srules->s, i);
+					return -1;
+				}
+			}
+			vstate.alg = (vstate.alg * 10) + (srules->s[i] - '0');
+		}
+		LM_DBG("routing with setid=%d alg=%d cnt=%d limit=0x%x (%u)\n",
+				vstate.setid, vstate.alg, vstate.cnt, vstate.limit,
+				vstate.limit);
+
+		vstate.umode = DS_SETOP_XAVP;
+		/* if no r-uri/d-uri was set already, keep using the update mode
+		 * specified by the param, then just add to xavps list */
+		if(vstate.emode == 0) {
+			switch(smode->s[0]) {
+				case '0':
+				case 'd':
+				case 'D':
+					vstate.umode = DS_SETOP_DSTURI;
+					break;
+				case '1':
+				case 'r':
+				case 'R':
+					vstate.umode = DS_SETOP_RURI;
+					break;
+				case '2':
+				case 'x':
+				case 'X':
+					break;
+				default:
+					LM_ERR("invalid routing mode parameter: %.*s\n", smode->len,
+							smode->s);
+					return -1;
+			}
+		}
+		vret = ds_manage_routes(msg, &vstate, sres);
+		if(vret < 0) {
+			LM_DBG("failed to select target destinations from %d=%d [%.*s]\n",
+					vstate.setid, vstate.alg, srules->len, srules->s);
+			/* continue to try other target groups */
+		} else {
+			if(vret > 0) {
+				gret = vret;
+				if(sres != NULL) {
+					gres = *sres;
+				}
+			}
+		}
+	}
+
+	if(gret < 0) {
+		/* no selection of a target address */
+		LM_DBG("failed to select any target destinations from [%.*s]\n",
+				srules->len, srules->s);
+		/* return last failure code when trying to select target addresses */
+		return vret;
+	}
+
+	/* add cnt value to xavp */
+	if(((ds_xavp_ctx_mode & DS_XAVP_CTX_SKIP_CNT) == 0)
+			&& (ds_xavp_ctx.len >= 0)) {
+		/* add to xavp the number of selected dst records */
+		memset(&nxval, 0, sizeof(sr_xval_t));
+		nxval.type = SR_XTYPE_LONG;
+		nxval.v.l = vstate.cnt;
+		if(xavp_add_xavp_value(&ds_xavp_ctx, &ds_xavp_ctx_cnt, &nxval, NULL)
+				== NULL) {
+			LM_ERR("failed to add cnt value to xavp\n");
+			return -1;
+		}
+	}
+
+	LM_DBG("selected target destinations: %d\n", vstate.cnt);
+	if(sres != NULL) {
+		*sres = gres;
+	}
+	return gret;
 }
 
 typedef struct sorted_ds
@@ -2600,7 +2799,8 @@ int ds_manage_route_algo13(ds_set_t *idx, ds_select_state_t *rstate)
 /**
  *
  */
-int ds_manage_routes(sip_msg_t *msg, ds_select_state_t *rstate)
+int ds_manage_routes(
+		sip_msg_t *msg, ds_select_state_t *rstate, ds_selres_t *sres)
 {
 	int i;
 	unsigned int hash;
@@ -2758,8 +2958,9 @@ int ds_manage_routes(sip_msg_t *msg, ds_select_state_t *rstate)
 			lock_get(&idx->lock);
 			hash = ds_manage_route_algo13(idx, rstate);
 			lock_release(&idx->lock);
-			if(hash == -1)
+			if(hash == -1) {
 				return -1;
+			}
 			xavp_filled = 1;
 			break;
 		/* case DS_ALG_RRSERIAL: // 14 - round-robin or serial decided above */
@@ -2798,12 +2999,12 @@ int ds_manage_routes(sip_msg_t *msg, ds_select_state_t *rstate)
 			if(ds_use_default != 0) {
 				i = idx->nr - 1;
 				if(ds_skip_dst(idx->dlist[i].flags)
-						|| ds_oc_skip(idx, rstate->alg, i))
+						|| ds_oc_skip(idx, rstate->alg, i)) {
 					return -1;
+				}
 				break;
-			} else {
-				return -1;
 			}
+			return -1;
 		}
 	}
 
@@ -2836,16 +3037,29 @@ int ds_manage_routes(sip_msg_t *msg, ds_select_state_t *rstate)
 		if(ds_add_branches(msg, idx, hash, rstate->umode) < 0) {
 			LM_ERR("failed to add additional branches\n");
 			/* one destination was already set - return success anyhow */
+			if(sres != NULL) {
+				sres->hash = hash;
+			}
 			return 2;
+		}
+		if(sres != NULL) {
+			sres->hash = hash;
 		}
 		return 1;
 	}
 
-	if(!(ds_flags & DS_FAILOVER_ON))
+	if(!(ds_flags & DS_FAILOVER_ON)) {
+		if(sres != NULL) {
+			sres->hash = hash;
+		}
 		return 1;
+	}
 
 	if(ds_xavp_dst.len <= 0) {
 		/* no xavp name to store the rest of the records */
+		if(sres != NULL) {
+			sres->hash = hash;
+		}
 		return 1;
 	}
 
@@ -2868,6 +3082,9 @@ int ds_manage_routes(sip_msg_t *msg, ds_select_state_t *rstate)
 		rstate->cnt++;
 	}
 
+	if(sres != NULL) {
+		sres->hash = hash;
+	}
 	return 1;
 }
 
@@ -3428,7 +3645,7 @@ int ds_get_state(int group, str *address, str *iuid)
 }
 
 /**
- * Update destionation's state
+ * Update destination's state
  */
 int ds_update_state(sip_msg_t *msg, int group, str *address, str *iuid,
 		int state, int mode, ds_rctx_t *rctx)
@@ -3439,6 +3656,8 @@ int ds_update_state(sip_msg_t *msg, int group, str *address, str *iuid,
 	ds_set_t *idx = NULL;
 	str *fmatch;
 	str *vmatch;
+	int was_down = 0;
+	int is_down = 0;
 
 	if(_ds_list == NULL || _ds_list_nr <= 0) {
 		LM_ERR("the list is null\n");
@@ -3529,17 +3748,28 @@ int ds_update_state(sip_msg_t *msg, int group, str *address, str *iuid,
 				}
 			}
 
-			if((ds_event_callback_mode == 0)
-					|| ((mode & DS_STATE_MODE_FUNC) == 0)) {
-				if(!ds_skip_dst(old_state)
-						&& ds_skip_dst(idx->dlist[i].flags)) {
-					ds_run_route(msg, address, "dispatcher:dst-down", rctx);
 
-				} else if(ds_skip_dst(old_state)
-						  && !ds_skip_dst(idx->dlist[i].flags)) {
-					ds_run_route(msg, address, "dispatcher:dst-up", rctx);
+			if((ds_event_callback_mode == DS_EVRTMODE_RUNTIME)
+					|| (ds_event_callback_mode == DS_EVRTMODE_INIT)
+					|| ((mode & DS_STATE_MODE_FUNC) == 0)) {
+				was_down = ds_skip_dst(old_state);
+				is_down = ds_skip_dst(idx->dlist[i].flags);
+				if(ds_event_callback_mode == DS_EVRTMODE_INIT) {
+					if((!was_down && is_down) || (old_state == 0 && is_down)) {
+						ds_run_route(msg, address, "dispatcher:dst-down", rctx);
+					} else if((was_down && !is_down)
+							  || (old_state == 0 && !is_down)) {
+						ds_run_route(msg, address, "dispatcher:dst-up", rctx);
+					}
+				} else {
+					if(!was_down && is_down) {
+						ds_run_route(msg, address, "dispatcher:dst-down", rctx);
+					} else if(was_down && !is_down) {
+						ds_run_route(msg, address, "dispatcher:dst-up", rctx);
+					}
 				}
 			}
+
 			if(idx->dlist[i].attrs.rweight > 0)
 				ds_reinit_rweight_on_state_change(
 						old_state, idx->dlist[i].flags, idx);

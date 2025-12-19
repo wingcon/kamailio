@@ -104,7 +104,7 @@ jobs:
       contents: write
     steps:
     - name: checkout sources
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
 
     - name: print commit info
       id: init
@@ -140,7 +140,7 @@ jobs:
           mv ~/rpmbuild/RPMS/*/* RPMS/${os_folder}/${ref_folder}/${{ github.ref_name }}/${{ matrix.arch }}
 
     - name: Push artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: kamailio-${{ matrix.os }}-${{ github.ref_name }}-${{ matrix.arch }}.rpm
         path: |
@@ -170,7 +170,7 @@ jobs:
     - build
     steps:
     - name: Download artifact images
-      uses: actions/download-artifact@v5
+      uses: actions/download-artifact@v7
       with:
         pattern: kamailio-${{ matrix.os }}-${{ github.ref_name }}-*.rpm
         path: ${{ runner.temp }}/repo

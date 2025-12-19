@@ -253,9 +253,13 @@ int tm_dns_reuse_rcv_socket = 0;
 
 int tm_headers_mode = 0;
 
+int tm_local_ack_branch_mode = 0;
+
 static rpc_export_t tm_rpc[];
 
 str tm_event_callback = STR_NULL;
+
+str tm_evcb_local_ack_sent = STR_NULL;
 
 static int fixup_t_check_status(void **param, int param_no);
 
@@ -514,6 +518,7 @@ static param_export_t params[] = {
 	{"contact_flows_avp", PARAM_STR, &contact_flows_avp},
 	{"disable_6xx_block", PARAM_INT, &default_tm_cfg.disable_6xx},
 	{"local_ack_mode", PARAM_INT, &default_tm_cfg.local_ack_mode},
+	{"local_ack_branch_mode", PARAM_INT, &tm_local_ack_branch_mode},
 	{"failure_reply_mode", PARAM_INT, &failure_reply_mode},
 	{"faked_reply_prio", PARAM_INT, &faked_reply_prio},
 	{"remap_503_500", PARAM_INT, &tm_remap_503_500},
@@ -525,6 +530,7 @@ static param_export_t params[] = {
 	{"headers_mode", PARAM_INT, &tm_headers_mode},
 	{"xavp_contact", PARAM_STR, &ulattrs_xavp_name},
 	{"event_callback", PARAM_STR, &tm_event_callback},
+	{"evcb_local_ack_sent", PARAM_STR, &tm_evcb_local_ack_sent},
 	{"relay_100", PARAM_INT, &default_tm_cfg.relay_100},
 	{"rich_redirect", PARAM_INT, &tm_rich_redirect},
 	{"event_callback_lres_sent", PARAM_STR, &_tm_event_callback_lres_sent},

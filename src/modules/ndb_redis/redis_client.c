@@ -64,9 +64,7 @@ extern int redis_allowed_timeouts_param;
 extern int redis_flush_on_reconnect_param;
 extern int redis_allow_dynamic_nodes_param;
 extern int ndb_redis_debug;
-#ifdef WITH_SSL
 extern char *ndb_redis_ca_path;
-#endif
 
 /* backwards compatibility with hiredis < 0.12 */
 #if(HIREDIS_MAJOR == 0) && (HIREDIS_MINOR < 12)
@@ -79,6 +77,23 @@ int redis_append_formatted_command(
 #endif
 
 /**
+ * Cleanup Redis connection and free resources
+ */
+static inline void cleanup_redis_context(redisc_server_t *rsrv)
+{
+	if(rsrv->ctxRedis) {
+		redisFree(rsrv->ctxRedis);
+		rsrv->ctxRedis = NULL;
+	}
+#ifdef WITH_SSL
+	if(rsrv->sslCtxRedis != NULL) {
+		redisFreeSSLContext(rsrv->sslCtxRedis);
+		rsrv->sslCtxRedis = NULL;
+	}
+#endif
+}
+
+/**
  *
  */
 int redisc_init(void)
@@ -86,9 +101,7 @@ int redisc_init(void)
 	char addr[256], pass[256], unix_sock_path[256], sentinel_group[256];
 
 	unsigned int port, db, sock = 0, haspass = 0, sentinel_master = 1;
-#ifdef WITH_SSL
 	unsigned int enable_ssl = 0;
-#endif
 	int i, row;
 	redisc_server_t *rsrv = NULL;
 	param_t *pit = NULL;
@@ -150,13 +163,17 @@ int redisc_init(void)
 				snprintf(pass, sizeof(pass) - 1, "%.*s", pit->body.len,
 						pit->body.s);
 				haspass = 1;
-#ifdef WITH_SSL
 			} else if(pit->name.len == 3
 					  && strncmp(pit->name.s, "tls", 3) == 0) {
-				snprintf(pass, sizeof(pass) - 1, "%.*s", pit->body.len,
-						pit->body.s);
-				if(str2int(&pit->body, &enable_ssl) < 0)
+				/* parse tls flag only; do not overwrite password buffer */
+				if(str2int(&pit->body, &enable_ssl) < 0) {
 					enable_ssl = 0;
+				}
+#ifndef WITH_SSL
+				if(enable_ssl) {
+					LM_WARN("tls connection set, but the module is not "
+							"compiled with SSL/TLS support\n");
+				}
 #endif
 			} else if(pit->name.len == 14
 					  && strncmp(pit->name.s, "sentinel_group", 14) == 0) {
@@ -205,8 +222,12 @@ int redisc_init(void)
 								sentinel_group);
 						if(res && (res->type == REDIS_REPLY_ARRAY)
 								&& (res->elements == 2)) {
-							strncpy(addr, res->element[0]->str,
-									res->element[0]->len + 1);
+							/* safe-bounded copy of address */
+							size_t alen = (size_t)res->element[0]->len;
+							if(alen >= sizeof(addr))
+								alen = sizeof(addr) - 1;
+							memcpy(addr, res->element[0]->str, alen);
+							addr[alen] = '\0';
 							port = atoi(res->element[1]->str);
 							LM_DBG("sentinel replied: %s:%d\n", addr, port);
 							srvfound = 1;
@@ -288,12 +309,13 @@ int redisc_init(void)
 					rsrv->ctxRedis->errstr);
 			goto err2;
 		}
-		if((haspass != 0) && redisc_check_auth(rsrv, pass)) {
-			LM_ERR("Authentication failed.\n");
-			goto err2;
-		}
+		/* set command timeout before any command including AUTH */
 		if(redisSetTimeout(rsrv->ctxRedis, tv_cmd)) {
 			LM_ERR("Failed to set timeout.\n");
+			goto err2;
+		}
+		if((haspass != 0) && redisc_check_auth(rsrv, pass)) {
+			LM_ERR("Authentication failed.\n");
 			goto err2;
 		}
 		if(redisCommandNR(rsrv->ctxRedis, "PING")) {
@@ -308,43 +330,71 @@ int redisc_init(void)
 					db, rsrv->ctxRedis->errstr);
 			goto err2;
 		}
-	}
+		LM_INFO("successfully initialized redis server [%.*s] ctxRedis=%p\n",
+				rsrv->sname->len, rsrv->sname->s, rsrv->ctxRedis);
+		continue;
 
+	err2:
+		if(sock != 0) {
+			LM_ERR("error communicating with redis server [%.*s]"
+				   " (unix:%s db:%d): %s\n",
+					rsrv->sname->len, rsrv->sname->s, unix_sock_path, db,
+					rsrv->ctxRedis->errstr);
+		} else {
+			LM_ERR("error communicating with redis server [%.*s] (%s:%d/%d): "
+				   "%s\n",
+					rsrv->sname->len, rsrv->sname->s, addr, port, db,
+					rsrv->ctxRedis->errstr);
+		}
+		if(init_without_redis == 1) {
+			/* Clean up resources once before deciding what to do */
+			cleanup_redis_context(rsrv);
+
+			/* Now decide whether to continue or return */
+			if(rsrv->next != NULL) {
+				LM_WARN("failed to connect to redis server [%.*s], trying next "
+						"server\n",
+						rsrv->sname->len, rsrv->sname->s);
+				continue;
+			} else {
+				LM_WARN("failed to initialize redis connections, but "
+						"initializing"
+						" module anyway.\n");
+				return 0;
+			}
+		}
+
+		return -1;
+
+	err:
+		if(sock != 0) {
+			LM_ERR("failed to connect to redis server [%.*s] (unix:%s db:%d)\n",
+					rsrv->sname->len, rsrv->sname->s, unix_sock_path, db);
+		} else {
+			LM_ERR("failed to connect to redis server [%.*s] (%s:%d/%d)\n",
+					rsrv->sname->len, rsrv->sname->s, addr, port, db);
+		}
+		if(init_without_redis == 1) {
+			/* Clean up resources once before deciding what to do */
+			cleanup_redis_context(rsrv);
+
+			/* Now decide whether to continue or return */
+			if(rsrv->next != NULL) {
+				LM_WARN("failed to connect to redis server [%.*s], trying next "
+						"server\n",
+						rsrv->sname->len, rsrv->sname->s);
+				continue;
+			} else {
+				LM_WARN("failed to initialize redis connections, but "
+						"initializing"
+						" module anyway.\n");
+				return 0;
+			}
+		}
+
+		return -1;
+	}
 	return 0;
-
-err2:
-	if(sock != 0) {
-		LM_ERR("error communicating with redis server [%.*s]"
-			   " (unix:%s db:%d): %s\n",
-				rsrv->sname->len, rsrv->sname->s, unix_sock_path, db,
-				rsrv->ctxRedis->errstr);
-	} else {
-		LM_ERR("error communicating with redis server [%.*s] (%s:%d/%d): %s\n",
-				rsrv->sname->len, rsrv->sname->s, addr, port, db,
-				rsrv->ctxRedis->errstr);
-	}
-	if(init_without_redis == 1) {
-		LM_WARN("failed to initialize redis connections, but initializing"
-				" module anyway.\n");
-		return 0;
-	}
-
-	return -1;
-err:
-	if(sock != 0) {
-		LM_ERR("failed to connect to redis server [%.*s] (unix:%s db:%d)\n",
-				rsrv->sname->len, rsrv->sname->s, unix_sock_path, db);
-	} else {
-		LM_ERR("failed to connect to redis server [%.*s] (%s:%d/%d)\n",
-				rsrv->sname->len, rsrv->sname->s, addr, port, db);
-	}
-	if(init_without_redis == 1) {
-		LM_WARN("failed to initialize redis connections, but initializing"
-				" module anyway.\n");
-		return 0;
-	}
-
-	return -1;
 }
 
 /**
@@ -524,8 +574,7 @@ int redisc_reconnect_server(redisc_server_t *rsrv)
 			haspass = 1;
 #ifdef WITH_SSL
 		} else if(pit->name.len == 3 && strncmp(pit->name.s, "tls", 3) == 0) {
-			snprintf(
-					pass, sizeof(pass) - 1, "%.*s", pit->body.len, pit->body.s);
+			/* parse tls flag only; do not overwrite password buffer */
 			if(str2int(&pit->body, &enable_ssl) < 0)
 				enable_ssl = 0;
 #endif
@@ -653,9 +702,10 @@ int redisc_reconnect_server(redisc_server_t *rsrv)
 		goto err;
 	if(rsrv->ctxRedis->err)
 		goto err2;
-	if((haspass) && redisc_check_auth(rsrv, pass))
-		goto err2;
+	/* set command timeout before any command including AUTH */
 	if(redisSetTimeout(rsrv->ctxRedis, tv_cmd))
+		goto err2;
+	if((haspass) && redisc_check_auth(rsrv, pass))
 		goto err2;
 	if(redisCommandNR(rsrv->ctxRedis, "PING"))
 		goto err2;
@@ -961,12 +1011,10 @@ int check_cluster_reply(redisReply *reply, redisc_server_t **rsrv)
 				char *server_new;
 
 				memset(spec_new, 0, sizeof(spec_new));
-				/* For now the only way this can work is if
-				 * the new node is accessible with default
-				 * parameters for sock and db */
+				/* For now, also include db=0 to prepare attribute inheritance */
 				server_len = snprintf(spec_new, sizeof(spec_new) - 1,
-						"name=%.*s;addr=%.*s;port=%i", name.len, name.s,
-						addr.len, addr.s, port);
+						"name=%.*s;addr=%.*s;port=%i;db=%d", name.len, name.s,
+						addr.len, addr.s, port, 0);
 
 				if(server_len < 0 || server_len > sizeof(spec_new) - 1) {
 					LM_ERR("failed to print server spec string (%d)\n",

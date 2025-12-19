@@ -73,9 +73,6 @@ mod_list_snmpstats=snmpstats
 # - modules depending on expat library
 mod_list_xmpp=xmpp
 
-# - modules depending on bdb (db4) library
-mod_list_berkeley=db_berkeley
-
 # - modules depending on curl library
 mod_list_utils=utils http_client lost slack
 
@@ -122,7 +119,7 @@ mod_list_presence=presence presence_conference presence_dialoginfo \
 mod_list_lua=app_lua
 
 # - modules depending on perl library
-mod_list_perldeps=app_perl db_perlvdb
+mod_list_perldeps=app_perl
 
 # - modules depending on python library
 mod_list_python=app_python
@@ -168,9 +165,6 @@ mod_list_ims=cdp cdp_avp ims_dialog ims_auth ims_isc ims_icscf ims_qos ims_qos_n
 			   ims_registrar_pcscf ims_registrar_scscf ims_usrloc_pcscf \
 			   ims_usrloc_scscf ims_charging ims_ocs ims_diameter_server \
 			   ims_ipsec_pcscf
-
-# - modules depending on java library
-mod_list_java=app_java
 
 # - modules depending on gzip library
 mod_list_gzcompress=gzcompress
@@ -250,7 +244,7 @@ mod_list_all=$(sort $(mod_list_basic) $(mod_list_extra) \
 			   $(mod_list_unixodbc) $(mod_list_xmldeps) \
 			   $(mod_list_perldeps) $(mod_list_cpl) \
 			   $(mod_list_xmpp) \
-			   $(mod_list_berkeley) $(mod_list_utils) \
+			   $(mod_list_utils) \
 			   $(mod_list_memcached) \
 			   $(mod_list_tlsdeps) \
 			   $(mod_list_websocket) \
@@ -263,7 +257,7 @@ mod_list_all=$(sort $(mod_list_basic) $(mod_list_extra) \
 			   $(mod_list_ims) \
 			   $(mod_list_cassandra) $(mod_list_oracle) \
 			   $(mod_list_outbound) \
-			   $(mod_list_java) $(mod_list_dnssec) \
+			   $(mod_list_dnssec) \
 			   $(mod_list_sctp) $(mod_list_autheph) \
 			   $(mod_list_gzcompress) $(mod_list_uuid) \
 			   $(mod_list_ev) $(mod_list_kazoo) \
@@ -388,9 +382,6 @@ module_group_ksnmpstats=$(mod_list_snmpstats)
 # pkg xmpp module
 module_group_kxmpp=$(mod_list_xmpp)
 
-# pkg berkeley module
-module_group_kberkeley=$(mod_list_berkeley)
-
 # pkg ldap modules
 module_group_kldap=$(mod_list_ldap)
 
@@ -467,9 +458,6 @@ module_group_kims=$(mod_list_ims)
 
 # pkg outbound module
 module_group_koutbound=$(mod_list_outbound)
-
-# pkg java module
-module_group_kjava=$(mod_list_java)
 
 # pkg dnssec module
 module_group_kdnssec=$(mod_list_dnssec)

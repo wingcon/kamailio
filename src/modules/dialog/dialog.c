@@ -190,6 +190,8 @@ static int w_dlg_reset_property(struct sip_msg *msg, char *prop, char *s2);
 static int w_dlg_manage(struct sip_msg *, char *, char *);
 static int w_dlg_bye(struct sip_msg *, char *, char *);
 static int w_dlg_refer(struct sip_msg *, char *, char *);
+static int w_dlg_refer_did(sip_msg_t *, char *, char *, char *, char *);
+static int w_dlg_refer_cid(sip_msg_t *, char *, char *, char *);
 static int w_dlg_bridge(struct sip_msg *, char *, char *, char *);
 static int w_dlg_set_timeout(struct sip_msg *, char *, char *, char *);
 static int w_dlg_set_timeout_by_profile2(struct sip_msg *, char *, char *);
@@ -265,6 +267,10 @@ static cmd_export_t cmds[]={
 			0, ANY_ROUTE },
 	{"dlg_refer",(cmd_function)w_dlg_refer,               2,fixup_dlg_refer,
 			0, ANY_ROUTE },
+	{"dlg_refer_did",(cmd_function)w_dlg_refer_did,       4,fixup_iiss,
+			fixup_free_iiss, ANY_ROUTE },
+	{"dlg_refer_cid",(cmd_function)w_dlg_refer_cid,       3,fixup_spve_all,
+			fixup_free_spve_all, ANY_ROUTE },
 	{"dlg_bridge",(cmd_function)w_dlg_bridge,             3,fixup_dlg_bridge,
 			0, ANY_ROUTE },
 	{"dlg_get",(cmd_function)w_dlg_get,                   3,fixup_dlg_bridge,
@@ -1064,6 +1070,28 @@ static int w_get_profile_size2(struct sip_msg *msg, char *profile, char *result)
 }
 
 
+/*!
+ * \brief Update dialog sflags and trigger database persistence
+ * \param d dialog cell
+ *
+ * This function handles the database update logic for sflags changes.
+ * In REALTIME mode, it immediately triggers a database update.
+ * In DELAYED/SHUTDOWN modes, it sets flags that will be processed
+ * by the timer or shutdown handler.
+ */
+static void dlg_update_sflags_db(dlg_cell_t *d)
+{
+	d->dflags |= DLG_FLAG_CHANGED_SFLAGS;
+	if(dlg_db_mode == DB_MODE_REALTIME) {
+		d->dflags |= DLG_FLAG_CHANGED;
+		update_dialog_dbinfo(d);
+	} else if(dlg_db_mode == DB_MODE_DELAYED
+			  || dlg_db_mode == DB_MODE_SHUTDOWN) {
+		/* Flag will be processed by timer or shutdown handler */
+		d->dflags |= DLG_FLAG_CHANGED;
+	}
+}
+
 static int ki_dlg_setflag(struct sip_msg *msg, int val)
 {
 	dlg_ctx_t *dctx;
@@ -1078,6 +1106,7 @@ static int ki_dlg_setflag(struct sip_msg *msg, int val)
 	d = dlg_get_by_iuid(&dctx->iuid);
 	if(d != NULL) {
 		d->sflags |= 1 << val;
+		dlg_update_sflags_db(d);
 		dlg_release(d);
 	}
 	return 1;
@@ -1110,6 +1139,7 @@ static int ki_dlg_resetflag(struct sip_msg *msg, int val)
 	d = dlg_get_by_iuid(&dctx->iuid);
 	if(d != NULL) {
 		d->sflags &= ~(1 << val);
+		dlg_update_sflags_db(d);
 		dlg_release(d);
 	}
 	return 1;
@@ -1549,6 +1579,166 @@ static int w_dlg_refer(struct sip_msg *msg, char *side, char *to)
 
 error:
 	dlg_release(dlg);
+	return -1;
+}
+
+static int ki_dlg_refer_did(
+		sip_msg_t *msg, int h_entry, int h_id, str *side, str *to)
+{
+	dlg_cell_t *dlg = NULL;
+	if(to->s == NULL || to->len == 0) {
+		LM_ERR("invalid To parameter\n");
+		goto error;
+	}
+	dlg = dlg_lookup((unsigned int)h_entry, (unsigned int)h_id);
+	if(dlg == NULL) {
+		LM_DBG("dialog not found (%d:%d)\n", h_entry, h_id);
+		goto error;
+	}
+	if(side->len == 6 && strncasecmp(side->s, "caller", 6) == 0) {
+		if(dlg_transfer(dlg, to, DLG_CALLER_LEG) != 0)
+			goto error;
+	} else {
+		if(dlg_transfer(dlg, to, DLG_CALLEE_LEG) != 0)
+			goto error;
+	}
+
+	dlg_release(dlg);
+	return 1;
+
+error:
+	if(dlg != NULL) {
+		dlg_release(dlg);
+	}
+	return -1;
+}
+
+static int w_dlg_refer_did(
+		sip_msg_t *msg, char *entry, char *id, char *side, char *to)
+{
+	dlg_cell_t *dlg = NULL;
+	int h_entry = 0;
+	int h_id = 0;
+	str sside = {0, 0};
+	str sto = {0, 0};
+
+	if(fixup_get_ivalue(msg, (gparam_t *)entry, &h_entry) != 0) {
+		LM_ERR("unable to get entry\n");
+		goto error;
+	}
+	if(fixup_get_ivalue(msg, (gparam_t *)id, &h_id) != 0) {
+		LM_ERR("unable to get id\n");
+		goto error;
+	}
+	if(fixup_get_svalue(msg, (gparam_t *)side, &sside) != 0) {
+		LM_ERR("unable to get side\n");
+		goto error;
+	}
+	if(fixup_get_svalue(msg, (gparam_t *)to, &sto) != 0) {
+		LM_ERR("unable to get To\n");
+		goto error;
+	}
+	if(sto.s == NULL || sto.len == 0) {
+		LM_ERR("invalid To parameter\n");
+		goto error;
+	}
+	dlg = dlg_lookup((unsigned int)h_entry, (unsigned int)h_id);
+	if(dlg == NULL) {
+		LM_DBG("dialog not found (%d:%d)\n", h_entry, h_id);
+		goto error;
+	}
+	if(sside.len == 6 && strncasecmp(sside.s, "caller", 6) == 0) {
+		if(dlg_transfer(dlg, &sto, DLG_CALLER_LEG) != 0)
+			goto error;
+	} else {
+		if(dlg_transfer(dlg, &sto, DLG_CALLEE_LEG) != 0)
+			goto error;
+	}
+
+	dlg_release(dlg);
+	return 1;
+
+error:
+	if(dlg != NULL) {
+		dlg_release(dlg);
+	}
+	return -1;
+}
+
+static int ki_dlg_refer_cid(sip_msg_t *msg, str *callid, str *side, str *to)
+{
+	dlg_cell_t *dlg = NULL;
+
+	if(to->s == NULL || to->len == 0) {
+		LM_ERR("invalid To parameter\n");
+		goto error;
+	}
+	dlg = dlg_search_cid(callid, 0);
+	if(dlg == NULL) {
+		LM_DBG("dialog not found (%.*s)\n", callid->len, callid->s);
+		goto error;
+	}
+	if(side->len == 6 && strncasecmp(side->s, "caller", 6) == 0) {
+		if(dlg_transfer(dlg, to, DLG_CALLER_LEG) != 0)
+			goto error;
+	} else {
+		if(dlg_transfer(dlg, to, DLG_CALLEE_LEG) != 0)
+			goto error;
+	}
+
+	dlg_release(dlg);
+	return 1;
+
+error:
+	if(dlg != NULL) {
+		dlg_release(dlg);
+	}
+	return -1;
+}
+
+static int w_dlg_refer_cid(sip_msg_t *msg, char *callid, char *side, char *to)
+{
+	dlg_cell_t *dlg = NULL;
+	str scallid = {0, 0};
+	str sside = {0, 0};
+	str sto = {0, 0};
+
+	if(fixup_get_svalue(msg, (gparam_t *)callid, &scallid) != 0) {
+		LM_ERR("unable to get id\n");
+		goto error;
+	}
+	if(fixup_get_svalue(msg, (gparam_t *)side, &sside) != 0) {
+		LM_ERR("unable to get side\n");
+		goto error;
+	}
+	if(fixup_get_svalue(msg, (gparam_t *)to, &sto) != 0) {
+		LM_ERR("unable to get To\n");
+		goto error;
+	}
+	if(sto.s == NULL || sto.len == 0) {
+		LM_ERR("invalid To parameter\n");
+		goto error;
+	}
+	dlg = dlg_search_cid(&scallid, 0);
+	if(dlg == NULL) {
+		LM_DBG("dialog not found (%.*s)\n", scallid.len, scallid.s);
+		goto error;
+	}
+	if(sside.len == 6 && strncasecmp(sside.s, "caller", 6) == 0) {
+		if(dlg_transfer(dlg, &sto, DLG_CALLER_LEG) != 0)
+			goto error;
+	} else {
+		if(dlg_transfer(dlg, &sto, DLG_CALLEE_LEG) != 0)
+			goto error;
+	}
+
+	dlg_release(dlg);
+	return 1;
+
+error:
+	if(dlg != NULL) {
+		dlg_release(dlg);
+	}
 	return -1;
 }
 
@@ -2798,6 +2988,16 @@ static sr_kemi_t sr_kemi_dialog_exports[] = {
 	},
 	{ str_init("dialog"), str_init("dlg_bridge"),
 		SR_KEMIP_INT, ki_dlg_bridge,
+		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
+			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("dialog"), str_init("dlg_refer_did"),
+		SR_KEMIP_INT, ki_dlg_refer_did,
+		{ SR_KEMIP_INT, SR_KEMIP_INT, SR_KEMIP_STR,
+			SR_KEMIP_STR, SR_KEMIP_NONE, SR_KEMIP_NONE }
+	},
+	{ str_init("dialog"), str_init("dlg_refer_cid"),
+		SR_KEMIP_INT, ki_dlg_refer_cid,
 		{ SR_KEMIP_STR, SR_KEMIP_STR, SR_KEMIP_STR,
 			SR_KEMIP_NONE, SR_KEMIP_NONE, SR_KEMIP_NONE }
 	},

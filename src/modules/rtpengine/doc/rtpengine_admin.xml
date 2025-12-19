@@ -19,14 +19,35 @@
 	<para>
 		This is a module that enables media streams to be proxied
 		via an &rtp; proxy. The only &rtp; proxy currently known to work
-		with this module is the Sipwise rtpengine
-		<ulink url="https://github.com/sipwise/rtpengine"></ulink>.
+		with this module is
+		<ulink url="https://github.com/sipwise/rtpengine">Sipwise rtpengine</ulink>.
 		The rtpengine module is a modified version of the original
 		rtpproxy module using a new control protocol. The module is
 		designed to be a drop-in replacement for the old module from
 		a configuration file point of view, however due to the
 		incompatible control protocol, it only works with &rtp; proxies
 		which specifically support it.
+	</para>
+	</section>
+
+	<section>
+	<title>Recommended Version</title>
+	<para>
+		This control module is compatible with a wide range of versions
+		of Sipwise rtpengine. The version numbers follow the schema
+		<quote>mrXX.Y.ZZZ</quote>, with <quote>XX</quote> being the major
+		release number, <quote>Y</quote> the minor release number, and
+		<quote>ZZZ</quote> the patch level suffix. Releases with
+		<quote>Y</quote> equalling 5 are LTS releases and receive bug
+		fixes for several years. The recommended version therefore is
+		either the latest LTS release on the latest patch level (e.g.
+		<quote>mr12.5.1.46</quote>), or the latest non-LTS release if
+		newer features are desired (e.g. <quote>mr13.4.1.5</quote>).
+
+		This version of &kamailio; includes a field in the control
+		protocol which is not supported by versions of rtpengine older
+		than <quote>mr12.4</quote> and will trigger a warning log message
+		in these older versions. This is purely cosmetic.
 	</para>
 	</section>
 
@@ -2322,7 +2343,7 @@ modparam("rtpengine", "control_cmd_tos", 144)
 			CRC32 - 2 (calculate crc32 sum over the callid).
 		</para>
 		<para>
-			Default value is 0, legacy algorithm.
+			Default value is 2, CRC32.
 		</para>
 		<para>
 			The values not falling into the range <quote>0-2</quote> are ignored.
@@ -3173,7 +3194,37 @@ if(rtpengine_query_v("j", "$var(rdata)")) {
 </programlisting>
 		</example>
 	</section>
+	<section id="rtpengine.f.rtpengine_connect">
+	<title>
+		<function moreinfo="none">rtpengine_connect([flags][,via-branch])</function>
+	</title>
+		<para>
+		Connects the media of two call parties directly without the need for a full
+		offer/answer exchange. The media will be connected in the same way as it would
+		through an offer/answer exchange. Transcoding will automatically be engaged if needed.
+		</para>
+		<para>
+		See rtpengine_query() function description above for the meaning of the
+		parameters. The function requires call-id, from-tag, and to-tag to identify
+		the two call parties to connect. Optionally, to-call-id can be specified in
+		flags to connect parties from different calls (different call IDs).
+		</para>
+		<para>
+		This function can be used from ANY_ROUTE.
+		</para>
+		<example>
+		<title><function>rtpengine_connect</function> usage</title>
+		<programlisting format="linespecific">
+...
+# Connect two parties from the same call (using tags from current SIP message)
+rtpengine_connect();
 
+# Connect two parties from different calls, specifying all parameters
+rtpengine_connect("call-id=abc123def456@192.168.1.100 from-tag=a1b2c3d4 to-tag=e5f6g7h8 to-call-id=xyz789ghi012@192.168.1.200");
+...
+</programlisting>
+		</example>
+	</section>
 	<section id="rtpengine.f.rtpengine_manage">
 	<title>
 		<function moreinfo="none">rtpengine_manage([flags][,via-branch])</function>
@@ -3938,7 +3989,7 @@ play_dtmf("code=1 volume=5 duration=300 pause=150");
 				<function moreinfo="none">rtpengine.reload</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ &kamcmd; rtpengine.reload
+$ &kamctl; rpc rtpengine.reload
 ...
 			</programlisting>
 			</example>
@@ -3977,9 +4028,9 @@ $ &kamcmd; rtpengine.reload
 			<function moreinfo="none">rtpengine.enable</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ &kamcmd; rtpengine.enable udp:192.168.2.133:8081 0
-$ &kamcmd; rtpengine.enable ::udp6:fe80::9a90:96ff:fea8:fd99:9999 1
-$ &kamcmd; rtpengine.enable all 1
+$ &kamctl; rpc rtpengine.enable udp:192.168.2.133:8081 0
+$ &kamctl; rpc rtpengine.enable ::udp6:fe80::9a90:96ff:fea8:fd99:9999 1
+$ &kamctl; rpc rtpengine.enable all 1
 ...
 			</programlisting>
 			</example>
@@ -4008,9 +4059,9 @@ $ &kamcmd; rtpengine.enable all 1
 				<function moreinfo="none">rtpengine.show</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ &kamcmd; rtpengine.show udp:192.168.2.133:8081
-$ &kamcmd; rtpengine.show ::udp6:fe80::9a90:96ff:fea8:fd99:9999
-$ &kamcmd; rtpengine.show all
+$ &kamctl; rpc rtpengine.show udp:192.168.2.133:8081
+$ &kamctl; rpc rtpengine.show ::udp6:fe80::9a90:96ff:fea8:fd99:9999
+$ &kamctl; rpc rtpengine.show all
 ...
 			</programlisting>
 			</example>
@@ -4037,9 +4088,9 @@ $ &kamcmd; rtpengine.show all
 				<function moreinfo="none">rtpengine.ping</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ &kamcmd; rtpengine.ping udp:192.168.2.133:8081
-$ &kamcmd; rtpengine.ping ::udp6:fe80::9a90:96ff:fea8:fd99:9999
-$ &kamcmd; rtpengine.ping all
+$ &kamctl; rpc rtpengine.ping udp:192.168.2.133:8081
+$ &kamctl; rpc rtpengine.ping ::udp6:fe80::9a90:96ff:fea8:fd99:9999
+$ &kamctl; rpc rtpengine.ping all
 ...
 			</programlisting>
 			</example>
@@ -4055,7 +4106,7 @@ $ &kamcmd; rtpengine.ping all
 				<function moreinfo="none">rtpengine.get_hash_total</function> usage</title>
 			<programlisting format="linespecific">
 ...
-$ &kamcmd; rtpengine.get_hash_total
+$ &kamctl; rpc rtpengine.get_hash_total
 ...
 			</programlisting>
 			</example>

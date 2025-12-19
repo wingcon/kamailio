@@ -185,16 +185,20 @@ URL:        https://kamailio.org/
 Vendor:     kamailio.org
 BuildRoot:  %{_tmppath}/%{name}-%{ver}-buildroot
 Conflicts:  kamailio-acc_json < %ver
-Conflicts:  kamailio-auth-ephemeral < %ver, kamailio-bdb < %ver
+Conflicts:  kamailio-auth-ephemeral < %ver
 Conflicts:  kamailio-carrierroute < %ver, kamailio-cpl < %ver
 Conflicts:  kamailio-dialplan < %ver, kamailio-dnssec < %ver
+Conflicts:  kamailio-gcrypt < %ver
 Conflicts:  kamailio-geoip < %ver, kamailio-gzcompress < %ver
 Conflicts:  kamailio-http_client < %ver
 Conflicts:  kamailio-ims < %ver, kamailio-java < %ver, kamailio-json < %ver
 Conflicts:  kamailio-jwt < %ver
+Conflicts:  kamailio-kafka < %ver
 Conflicts:  kamailio-kazoo < %ver
 Conflicts:  kamailio-lcr < %ver, kamailio-ldap < %ver, kamailio-lost < %ver, kamailio-lua < %ver
+Conflicts:  kamailio-mqtt < %ver
 Conflicts:  kamailio-nats < %ver
+Conflicts:  kamailio-nghttp2 < %ver
 Conflicts:  kamailio-rabbitmq < %ver
 Conflicts:  kamailio-memcached < %ver, kamailio-mongodb < %ver, kamailio-mysql < %ver
 Conflicts:  kamailio-outbound < %ver, kamailio-perl < %ver
@@ -213,6 +217,7 @@ Conflicts:  kamailio-uuid < %ver
 Requires:  systemd
 BuildRequires:  systemd-devel
 BuildRequires: bison
+BuildRequires: cmake
 BuildRequires: flex
 BuildRequires: which
 BuildRequires: make
@@ -277,22 +282,6 @@ Requires:   kamailio = %ver
 
 %description    auth-xkeys
 Functions for authentication using shared keys.
-
-
-%package    bdb
-Summary:    Berkeley database connectivity for Kamailio
-Group:      %{PKGGROUP}
-Requires:   kamailio = %ver
-%if 0%{?suse_version}
-Requires:   libdb-4_8
-BuildRequires:  libdb-4_8-devel
-%else
-Requires:   libdb
-BuildRequires:  libdb-devel
-%endif
-
-%description    bdb
-Berkeley database connectivity for Kamailio.
 
 
 %package    carrierroute
@@ -396,6 +385,16 @@ There is no protocol definition, it is all up to the author of the routing scrip
 Events can be generated for any event in Kamailio. For 3rd party transaction control, a transaction can be automatically
 suspended when sending the event, to be resumed at a later point, maybe triggered by an incoming message on the event socket.
 %endif
+
+
+%package    gcrypt
+Summary:    Module provides various cryptography tools for use in Kamailio
+Group:      %{PKGGROUP}
+Requires:   libgcrypt, kamailio = %ver
+BuildRequires:  libgcrypt-devel
+
+%description    gcrypt
+Module provides various cryptography tools for use in Kamailio.
 
 
 %package    geoip
@@ -516,6 +515,17 @@ This module provides JWT (JSON Web Token) functions to be used in Kamailio confi
 It relies on libjwt (at least v1.12.0) library (https://github.com/benmcollins/libjwt).
 
 
+%package    kafka
+Summary:    Module produces and sends messages to a Kafka server
+Group:      %{PKGGROUP}
+Requires:   librdkafka, kamailio = %ver
+BuildRequires:  librdkafka-devel
+
+%description    kafka
+Kafka module for Kamailio.
+Module produces and sends messages to a Kafka server.
+
+
 %if %{with kazoo}
 %package    kazoo
 Summary:    Kazoo middle layer connector support for Kamailio
@@ -613,6 +623,16 @@ MongoDB database connectivity for Kamailio.
 %endif
 
 
+%package    mqtt
+Summary:    Module allows bidirectional publish/subscribe communication by connecting Kamailio to a MQTT Broker
+Group:      %{PKGGROUP}
+Requires:   mosquitto, kamailio = %ver
+BuildRequires:  mosquitto-devel
+
+%description    mqtt
+Module allows bidirectional publish/subscribe communication by connecting Kamailio to a MQTT Broker.
+
+
 %package    mysql
 Summary:    MySQL database connectivity for Kamailio
 Group:      %{PKGGROUP}
@@ -639,6 +659,16 @@ BuildRequires:    libnats-devel
 %description    nats
 The module provides an NATS consumer for Kamailio. NATS is a real time distributed messaging platform, more details about it can be found at nats.io.
 %endif
+
+
+%package    nghttp2
+Summary:    Module implements an embedded HTTP/2 server using nghttpd2 library
+Group:      %{PKGGROUP}
+Requires:   libnghttp2, kamailio = %ver
+BuildRequires:    libnghttp2-devel
+
+%description    nghttp2
+Module implements an embedded HTTP/2 server using nghttpd2 library
 
 
 %package    outbound
@@ -1112,9 +1142,6 @@ db2_ldap \
 db_mongodb \
 %endif
 db_mysql \
-%if %{with perl}
-db_perlvdb
-%endif
 db_postgres \
 %if %{with redis}
 db_redis \
@@ -1130,6 +1157,7 @@ dnssec \
 %if %{with evapi}
 evapi \
 %endif
+gcrypt \
 geoip2 \
 gzcompress \
 h350 \
@@ -1154,7 +1182,7 @@ ims_usrloc_pcscf \
 ims_usrloc_scscf \
 %endif
 %if %{with jansson}
-jansson db_berkeley \
+jansson \
 janssonrpcc \
 %endif
 %if %{with json}
@@ -1162,6 +1190,7 @@ json \
 %endif
 jsonrpcc \
 jwt \
+kafka \
 %if %{with kazoo}
 kazoo \
 %endif
@@ -1178,6 +1207,7 @@ lwsc \
 memcached \
 %endif
 misc_radius \
+mqtt \
 %if %{with nats}
 nats \
 %endif
@@ -1187,6 +1217,7 @@ ndb_mongodb \
 %if %{with redis}
 ndb_redis \
 %endif
+nghttp2 \
 outbound \
 peering \
 %if %{with phonenum}
@@ -1676,17 +1707,6 @@ fi
 %{_libdir}/kamailio/modules/auth_xkeys.so
 
 
-%files      bdb
-%defattr(-,root,root)
-%doc %{_docdir}/kamailio/modules/README.db_berkeley
-%{_sbindir}/kamdb_recover
-%{_libdir}/kamailio/modules/db_berkeley.so
-%{_libdir}/kamailio/kamctl/kamctl.db_berkeley
-%{_libdir}/kamailio/kamctl/kamdbctl.db_berkeley
-%dir %{_datadir}/kamailio/db_berkeley
-%{_datadir}/kamailio/db_berkeley/*
-
-
 %files      carrierroute
 %defattr(-,root,root)
 %{_docdir}/kamailio/modules/README.carrierroute
@@ -1739,6 +1759,12 @@ fi
 %doc %{_docdir}/kamailio/modules/README.evapi
 %{_libdir}/kamailio/modules/evapi.so
 %endif
+
+
+%files      gcrypt
+%defattr(-,root,root)
+%doc %{_docdir}/kamailio/modules/README.gcrypt
+%{_libdir}/kamailio/modules/gcrypt.so
 
 
 %files      geoip
@@ -1827,6 +1853,12 @@ fi
 %defattr(-,root,root)
 %doc %{_docdir}/kamailio/modules/README.jwt
 %{_libdir}/kamailio/modules/jwt.so
+
+
+%files      kafka
+%defattr(-,root,root)
+%doc %{_docdir}/kamailio/modules/README.kafka
+%{_libdir}/kamailio/modules/kafka.so
 
 
 %if %{with kazoo}
@@ -1974,6 +2006,12 @@ fi
 %endif
 
 
+%files      mqtt
+%defattr(-,root,root)
+%doc %{_docdir}/kamailio/modules/README.mqtt
+%{_libdir}/kamailio/modules/mqtt.so
+
+
 %files      mysql
 %defattr(-,root,root)
 %doc %{_docdir}/kamailio/modules/README.db_mysql
@@ -1992,6 +2030,12 @@ fi
 %endif
 
 
+%files      nghttp2
+%defattr(-,root,root)
+%doc %{_docdir}/kamailio/modules/README.nghttp2
+%{_libdir}/kamailio/modules/nghttp2.so
+
+
 %files      outbound
 %defattr(-,root,root)
 %doc %{_docdir}/kamailio/modules/README.outbound
@@ -2002,9 +2046,7 @@ fi
 %files      perl
 %defattr(-,root,root)
 %doc %{_docdir}/kamailio/modules/README.app_perl
-%doc %{_docdir}/kamailio/modules/README.db_perlvdb
 %{_libdir}/kamailio/modules/app_perl.so
-%{_libdir}/kamailio/modules/db_perlvdb.so
 %dir %{_libdir}/kamailio/perl
 %{_libdir}/kamailio/perl/Kamailio.pm
 %dir %{_libdir}/kamailio/perl/Kamailio

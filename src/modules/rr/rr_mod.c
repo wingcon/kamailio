@@ -49,12 +49,6 @@
 #include "rr_cb.h"
 #include "api.h"
 
-#ifdef ENABLE_USER_CHECK
-#include <string.h>
-#include "../../core/str.h"
-str i_user = {0, 0};
-#endif
-
 int append_fromtag = 1;		  /*!< append from tag by default */
 int enable_double_rr = 1;	  /*!< enable using of 2 RR by default */
 int enable_full_lr = 0;		  /*!< compatibilty mode disabled by default */
@@ -135,9 +129,6 @@ static param_export_t params[] = {
 	{"append_fromtag", PARAM_INT, &append_fromtag},
 	{"enable_double_rr", PARAM_INT, &enable_double_rr},
 	{"enable_full_lr", PARAM_INT, &enable_full_lr},
-#ifdef ENABLE_USER_CHECK
-	{"ignore_user", PARAM_STR, &i_user},
-#endif
 	{"add_username", PARAM_INT, &add_username},
 	{"enable_socket_mismatch_warning", PARAM_INT,
 			&enable_socket_mismatch_warning},
@@ -185,13 +176,6 @@ static int mod_init(void)
 		LM_INFO("outbound module not available\n");
 		memset(&rr_obb, 0, sizeof(ob_api_t));
 	}
-
-#ifdef ENABLE_USER_CHECK
-	if(i_user.s && rr_obb.use_outbound) {
-		LM_ERR("cannot use \"ignore_user\" with outbound\n");
-		return -1;
-	}
-#endif
 
 	if(add_username != 0 && rr_obb.use_outbound) {
 		LM_ERR("cannot use \"add_username\" with outbound\n");
@@ -583,19 +567,19 @@ static int pv_get_route_uri_f(
 	/* Parse the message until the First-Route-Header: */
 	if(parse_headers(msg, HDR_ROUTE_F, 0) == -1) {
 		LM_ERR("while parsing message\n");
-		return -1;
+		return pv_get_null(msg, param, res);
 	}
 
 	if(!msg->route) {
 		LM_INFO("No route header present.\n");
-		return -1;
+		return pv_get_null(msg, param, res);
 	}
 	hdr = msg->route;
 
 	/* Parse the contents of the header: */
 	if(parse_rr(hdr) == -1) {
 		LM_ERR("Error while parsing Route header\n");
-		return -1;
+		return pv_get_null(msg, param, res);
 	}
 
 

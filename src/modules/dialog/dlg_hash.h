@@ -73,6 +73,9 @@
 #define DLG_FLAG_CHANGED_PROF (1 << 11)	 /*!< dialog-profiles changed - DMQ */
 #define DLG_FLAG_DB_LOAD_EXTRA (1 << 12) /*!< dialog loaded extra from db */
 
+#define DLG_FLAG_CHANGED_SFLAGS \
+	(1 << 13) /*!< sflags changed - needs db update */
+
 /* internal flags stored in db */
 #define DLG_IFLAG_TIMEOUTBYE (1 << 0) /*!< send bye on time-out */
 #define DLG_IFLAG_KA_SRC (1 << 1)	  /*!< send keep alive to src */
@@ -417,6 +420,10 @@ dlg_cell_t *get_dlg(str *callid, str *ftag, str *ttag, unsigned int *dir);
  */
 dlg_cell_t *dlg_search(str *callid, str *ftag, str *ttag, unsigned int *dir);
 
+/*!
+ * \brief Search first dialog that matches CallId
+ */
+dlg_cell_t *dlg_search_cid(str *callid, int mode);
 
 /*!
  * \brief Lock hash table slot by call-id
