@@ -54,8 +54,8 @@
 #define SHA256HASHHEXLEN 64
 
 /* Maximum-sized buffer for each algorithm */
-typedef unsigned char HASH[SHA256HASHLEN];
-typedef unsigned char HASHHEX[SHA256HASHHEXLEN + 1];
+typedef char HASH[SHA256HASHLEN];
+typedef char HASHHEX[SHA256HASHHEXLEN + 1];
 
 /*
  * Type of algorithm used
