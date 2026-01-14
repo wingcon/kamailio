@@ -49,6 +49,18 @@
 #include "../../core/crypto/sha256.h"
 #include "../../core/dprint.h"
 
+/* Cast to unsigned values and forward to sr_SHA256_Update */
+static inline void SHA256_Update(SHA256_CTX *context, char *data, int len)
+{
+	sr_SHA256_Update(context, (unsigned char *)data, (unsigned int)len);
+}
+
+/* Cast HASH (char array) to sha2_byte and forward to sr_SHA256_Final */
+static inline void SHA256_Final(HASH hash, SHA256_CTX *context)
+{
+    sr_SHA256_Final((sha2_byte *)hash, context);
+}
+
 /*
  * calculate H(A1) for MD5 hash algorithm as per spec
  */
@@ -79,12 +91,6 @@ static inline void calc_HA1_MD5(ha_alg_t _alg, str *_username, str *_realm, str 
 	cvt_hex(HA1, _sess_key, MD5HASHLEN, MD5HASHHEXLEN);
 }
 
-/* Cast to unsigned values and forward to sr_SHA256_Update */
-static inline void SHA256_Update(SHA256_CTX *context, char *data, int len)
-{
-	sr_SHA256_Update(context, (unsigned char *)data, (unsigned int)len);
-}
-
 /*
  * calculate H(A1) for SHA-256 hash algorithm as per spec
  */
@@ -100,7 +106,7 @@ static inline void calc_HA1_SHA256(ha_alg_t _alg, str *_username, str *_realm, s
     SHA256_Update(&Sha256Ctx, _realm->s, _realm->len);
     SHA256_Update(&Sha256Ctx, ":", 1);
     SHA256_Update(&Sha256Ctx, _password->s, _password->len);
-    sr_SHA256_Final((sha2_byte *)HA1, &Sha256Ctx);
+    SHA256_Final(HA1, &Sha256Ctx);
 
     if(_alg == HA_SHA256_SESS) {
         sr_SHA256_Init(&Sha256Ctx);
@@ -109,7 +115,7 @@ static inline void calc_HA1_SHA256(ha_alg_t _alg, str *_username, str *_realm, s
         SHA256_Update(&Sha256Ctx, _nonce->s, _nonce->len);
         SHA256_Update(&Sha256Ctx, ":", 1);
         SHA256_Update(&Sha256Ctx, _cnonce->s, _cnonce->len);
-        sr_SHA256_Final((sha2_byte *)HA1, &Sha256Ctx);
+        SHA256_Final(HA1, &Sha256Ctx);
     }
 
 	cvt_hex(HA1, _sess_key, SHA256HASHLEN, SHA256HASHHEXLEN);
@@ -137,7 +143,7 @@ static inline void calc_H_SHA256(str *ent, HASHHEX hash)
 	HASH HA1;
     sr_SHA256_Init(&Sha256Ctx);
     SHA256_Update(&Sha256Ctx, ent->s, ent->len);
-    sr_SHA256_Final((sha2_byte *)HA1, &Sha256Ctx);
+    SHA256_Final(HA1, &Sha256Ctx);
 	cvt_hex(HA1, hash, SHA256HASHLEN, SHA256HASHHEXLEN);
 }
 
@@ -246,7 +252,7 @@ static inline void calc_response_SHA256(HASHHEX _ha1, /* H(A1) */
         SHA256_Update(&Sha256Ctx, _hentity, SHA256HASHHEXLEN);
     }
 
-    sr_SHA256_Final((sha2_byte *)HA2, &Sha256Ctx);
+    SHA256_Final(HA2, &Sha256Ctx);
     cvt_hex(HA2, HA2Hex, SHA256HASHLEN, SHA256HASHHEXLEN);
 
     /* calculate response */
@@ -265,7 +271,7 @@ static inline void calc_response_SHA256(HASHHEX _ha1, /* H(A1) */
         SHA256_Update(&Sha256Ctx, ":", 1);
     }
     SHA256_Update(&Sha256Ctx, HA2Hex, SHA256HASHHEXLEN);
-    sr_SHA256_Final((sha2_byte *)RespHash, &Sha256Ctx);
+    SHA256_Final(RespHash, &Sha256Ctx);
 	cvt_hex(RespHash, _response, SHA256HASHLEN, SHA256HASHHEXLEN);
 	LM_DBG("H(A1) = %.*s, H(A2) = %.*s, rspauth = %.*s\n", SHA256HASHHEXLEN, _ha1,
 			SHA256HASHHEXLEN, HA2Hex, SHA256HASHHEXLEN, _response);
